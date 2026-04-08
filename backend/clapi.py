@@ -1,12 +1,16 @@
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File, Query, HTTPException
+from fastapi.responses import FileResponse 
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import fitz
 import uuid
 import re
 from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 
+# TODO: Clean Up the Code.
 app = FastAPI(title="CaseLaw API")
+# app.mount("/pdf", StaticFiles(directory="pdf"), name="pdf")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,6 +20,14 @@ app.add_middleware(
 )
 
 SOLR_URL = "http://localhost:8983/solr/nomologia"
+
+CATEGORY_FOLDERS = {
+    "Διοικητικό": "dioikitiko",
+    "Αστικό": "astiko",
+    "Ποινικό": "poiniko",
+    "Εμπορικό": "emporiko",
+    "Εργατικό": "ergatiko"
+}
 
 DIKASTIRIA = {
     "ΣτΕ":    "Συμβούλιο Επικρατείας",
@@ -33,8 +45,8 @@ ARITHMOS_PATTERN = re.compile(
     re.UNICODE
 )
 
-TMP_DIR = Path("/temporary/cl_pdfs")
-TMP_DIR.mkdir(exist_ok=True)
+TMP_DIR = Path("temporary/cl_pdfs")
+TMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 
@@ -73,7 +85,9 @@ def parse_metadata(text: str, filename: str) -> dict:
 def root():
     return {"message": "CaseLaw API is running"}
 
-
+# TODO: Add a Dev Account Login with MFA and a Dashboard to See Uploaded PDFs, Search Queries, and Analytics
+# TODO: Reconcider the the way the PDFs are stored and indexed( katigoria part, should probably be changed to dikastirio, and maybe etos so it can be more automated)
+# FIXME: fix the title extraction, cause sometimes its not only one line, and sometimes its not the first line
 @app.post("/api/index")
 async def index_pdf(
     file: UploadFile = File(...),
@@ -172,3 +186,27 @@ async def get_case(case_id: str):
     if not docs:
         return {"status": "error", "detail": "Not found"}
     return docs[0]
+
+@app.get("/pdf/{katigoria}/{filename}")
+async def serve_pdf(katigoria: str, filename: str):
+    # Ο κεντρικός σου φάκελος λέγεται ακριβώς "pdf"
+    base_folder = Path("pdf") 
+    
+    # Το FastAPI παίρνει τη λέξη "Διοικητικό" και το λεξικό την κάνει "dioikitiko"
+    folder_name = CATEGORY_FOLDERS.get(katigoria, katigoria)
+    
+    # Χτίζουμε την ακριβή διαδρομή: π.χ. pdf / dioikitiko / test1.pdf
+    exact_path = base_folder / folder_name / filename
+    
+    # 1. Προσπάθεια: Το βρίσκει αστραπιαία στον σωστό υποφάκελο
+    if exact_path.exists() and exact_path.is_file():
+        return FileResponse(exact_path, media_type="application/pdf")
+        
+    # 2. Δίχτυ Ασφαλείας: Αν κάποιο PDF μπήκε σε λάθος φάκελο, ψάχνει σε ΟΛΟΥΣ τους φακέλους
+    if base_folder.exists():
+        for fallback_path in base_folder.rglob(filename):
+            if fallback_path.is_file():
+                return FileResponse(fallback_path, media_type="application/pdf")
+                
+    # 3. Τελικό σφάλμα αν δεν υπάρχει πουθενά
+    raise HTTPException(status_code=404, detail=f"Το αρχείο {filename} δεν βρέθηκε στον δίσκο.")

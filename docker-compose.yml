@@ -1,4 +1,5 @@
 services:
+# FIXME: Launch backend and frontend with docker compose, and make sure they can communicate with each other (use environment variables for the API URL) 
   solr:
     image: solr:latest
     container_name: solr_nomologia
