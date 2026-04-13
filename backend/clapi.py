@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
-# TODO: Clean Up the Code.
+# TODO: Clean Up the Code(kinda did?).
 app = FastAPI(title="CaseLaw API")
 # app.mount("/pdf", StaticFiles(directory="pdf"), name="pdf")
 
@@ -26,22 +26,24 @@ CATEGORY_FOLDERS = {
     "Αστικό": "astiko",
     "Ποινικό": "poiniko",
     "Εμπορικό": "emporiko",
-    "Εργατικό": "ergatiko"
+    "Εργατικό": "ergatiko",
+    "Οικογενειακό": "oikogeneiako",
 }
 
 DIKASTIRIA = {
-    "ΣτΕ":    "Συμβούλιο Επικρατείας",
-    "ΑΠ":     "Άρειος Πάγος",
-    "ΕφΑθ":   "Εφετείο Αθηνών",
-    "ΕφΠειρ": "Εφετείο Πειραιά",
-    "ΠΠρ":    "Πρωτοδικείο Πειραιά",
-    "ΜΠΑ":    "Μονομελές Πρωτοδικείο Αθηνών",
-    "ΔΕΕ":    "Δικαστήριο ΕΕ",
-    "ΕΔΔΑ":   "Ευρωπαϊκό Δικαστήριο Δικαιωμάτων",
+    "ΣτΕ":       "Συμβούλιο Επικρατείας",
+    "ΑΠ":        "Άρειος Πάγος",
+    "ΕφΑθ":      "Εφετείο Αθηνών",
+    "ΕφΠειρ":    "Εφετείο Πειραιά",
+    "ΠΠρ":       "Πρωτοδικείο Πειραιά",
+    "ΜονΠρΑθ":   "Μονομελές Πρωτοδικείο Αθηνών",
+    "ΜονΠρωτΑθ": "Μονομελές Πρωτοδικείο Αθηνών",
+    "ΔΕΕ":       "Δικαστήριο ΕΕ",
+    "ΕΔΔΑ":      "Ευρωπαϊκό Δικαστήριο Δικαιωμάτων",
 }
 
 ARITHMOS_PATTERN = re.compile(
-    r'(Απόφαση\s+)?(ΣτΕ|ΑΠ|ΕφΑθ|ΕφΠειρ|ΠΠρ|ΜΠΑ|ΔΕΕ|ΕΔΔΑ)\s+(\d+)/(\d{4})',
+    r'(Απόφαση\s+)?(ΣτΕ|ΑΠ|ΕφΑθ|ΕφΠειρ|ΠΠρ|ΜονΠρΑθ|ΜονΠρωτΑθ|ΔΕΕ|ΕΔΔΑ)\s+([\d.]+)/(\d{4})',
     re.UNICODE
 )
 
@@ -70,7 +72,17 @@ def parse_metadata(text: str, filename: str) -> dict:
         year       = 0
 
     lines  = [l.strip() for l in text.split("\n") if l.strip()]
-    titlos = lines[0][:300] if lines else filename
+
+    # Title = lines from the 1st "Απόφαση <court> <number>" up to (not including) the 2nd occurrence
+    match_indices = [i for i, line in enumerate(lines) if ARITHMOS_PATTERN.search(line)]
+    if len(match_indices) >= 2:
+        title_parts = lines[match_indices[0]:match_indices[1]]
+    elif len(match_indices) == 1:
+        title_parts = [lines[match_indices[0]]]
+    else:
+        title_parts = [lines[0]] if lines else [filename]
+
+    titlos = " ".join(title_parts)[:300]
 
     return {
         "arithmos":   arithmos,
@@ -86,7 +98,7 @@ def root():
     return {"message": "CaseLaw API is running"}
 
 # TODO: Add a Dev Account Login with MFA and a Dashboard to See Uploaded PDFs, Search Queries, and Analytics
-# TODO: Reconcider the the way the PDFs are stored and indexed( katigoria part, should probably be changed to dikastirio, and maybe etos so it can be more automated)
+# TODO: Reconsider the way the PDFs are stored and indexed (katigoria part, should probably be changed to dikastirio, and maybe etos so it can be more automated)
 # FIXME: fix the title extraction, cause sometimes its not only one line, and sometimes its not the first line
 @app.post("/api/index")
 async def index_pdf(
@@ -135,16 +147,19 @@ async def index_pdf(
 @app.get("/api/search")
 async def search(
     q: str,
-    dikastirio: str = None,
-    etos: int = None,
-    katigoria: str = None,
+    dikastirio: list[str] = Query(default=None),
+    etos: list[int] = Query(default=None),
+    katigoria: list[str] = Query(default=None),
     page: int = 0,
     rows: int = 10,
 ):
     fq = []
-    if dikastirio: fq.append(f'dikastirio:"{dikastirio}"')
-    if etos:       fq.append(f"etos:{etos}")
-    if katigoria:  fq.append(f'katigoria:"{katigoria}"')
+    if dikastirio:
+        fq.append('dikastirio:(' + ' OR '.join(f'"{d}"' for d in dikastirio) + ')')
+    if etos:
+        fq.append('etos:(' + ' OR '.join(str(e) for e in etos) + ')')
+    if katigoria:
+        fq.append('katigoria:(' + ' OR '.join(f'"{k}"' for k in katigoria) + ')')
 
     params = {
         "q":              q,
@@ -173,6 +188,32 @@ async def search(
         "results":    data["response"]["docs"],
         "highlights": data.get("highlighting", {}),
         "facets":     data.get("facet_counts", {}).get("facet_fields", {}),
+    }
+
+
+@app.get("/api/facets")
+async def get_facets():
+    """Return all available filter values (katigoria, dikastirio, etos) from Solr."""
+    params = {
+        "q":           "*:*",
+        "rows":        0,
+        "facet":       "true",
+        "facet.field": ["dikastirio", "etos", "katigoria"],
+        "facet.limit": -1,
+        "facet.mincount": 1,
+        "wt":          "json",
+    }
+    resp = httpx.get(f"{SOLR_URL}/select", params=params)
+    resp.raise_for_status()
+    facet_fields = resp.json().get("facet_counts", {}).get("facet_fields", {})
+
+    def parse_pairs(flat_list):
+        return {flat_list[i]: flat_list[i + 1] for i in range(0, len(flat_list), 2)}
+
+    return {
+        "katigoria":  parse_pairs(facet_fields.get("katigoria", [])),
+        "dikastirio": parse_pairs(facet_fields.get("dikastirio", [])),
+        "etos":       parse_pairs(facet_fields.get("etos", [])),
     }
 
 
