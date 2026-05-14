@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { Card } from '@heroui/react';
 import { useRouter } from 'next/navigation';
 import {
   Search, Command, X,
@@ -12,6 +13,7 @@ import {
 import { InteractiveProductCard } from '@/components/ui/card-7';
 import { PdfViewer } from '@/components/PdfViewer';
 import { AuthButton } from '@/components/AuthButton';
+import { AdminNavLink } from '@/components/AdminNavLink';
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
 import { useKeyboardShortcuts, usePdfViewer, useRecentSearches } from '@/lib/hooks';
 import { buildPdfUrl } from '@/lib/api';
@@ -135,6 +137,8 @@ export default function App() {
     openPdf(buildPdfUrl(pdfPath, katigoria, query), titlos);
   };
 
+  const categoryChipClass = (_cat: string) => 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30'
+
   return (
     <div className="min-h-screen text-white font-sans relative overflow-x-hidden selection:bg-yellow-500/30">
 
@@ -156,7 +160,7 @@ export default function App() {
             <button className="px-6 py-2.5 rounded-full bg-white text-black text-sm font-medium">Αρχική</button>
             <button onClick={() => router.push('/results')} className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">Αρχείο</button>
             <button className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium" onClick={() => setShowChatbot(true)}>AI Chatbot</button>
-            <button className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">N/A</button>
+            <AdminNavLink />
           </div>
 
           <div className="flex-1 flex items-center justify-end gap-6">
@@ -253,11 +257,12 @@ export default function App() {
           <div className="h-3" />
 
           {/* Results Body */}
-          <div
+        <div
             className={`relative w-full max-w-2xl bg-[#1e1e1e] border border-gray-800/60 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-gray-200 transition-all duration-300 ease-out ${
               showModalBody ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
             }`}
             onClick={e => e.stopPropagation()}
+            data-theme="dark"
           >
 
             {/* Filter Chips */}
@@ -442,25 +447,29 @@ export default function App() {
                   </p>
                   <div className="flex flex-col gap-2">
                     {results.map((item) => (
-                      <div
+                      <Card
                         key={item.id}
+                        className="cursor-pointer group hover:bg-surface-hover transition-colors"
                         onClick={() => handleResultClick(item.pdf_path, item.titlos, item.arithmos, item.katigoria)}
-                        className="group flex flex-col px-3 py-3 rounded-xl bg-[#2a2a2c] border border-gray-700/50 hover:border-yellow-500/50 cursor-pointer transition-colors"
                       >
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-yellow-500/80" />
-                            <span className="text-sm font-bold text-white">{item.arithmos}</span>
+                            <FileText className="w-4 h-4 text-yellow-500/80 shrink-0" />
+                            <span className="text-sm font-bold text-foreground">{item.arithmos}</span>
                           </div>
-                          <span className="text-xs px-2 py-0.5 bg-[#1e1e1e] text-gray-400 rounded-md border border-gray-700">
-                            {item.dikastirio} • {item.etos}
-                          </span>
+                            {item.katigoria?.length > 0 && (
+                            <div className="flex flex-wrap gap-1 shrink-0">
+                              {item.katigoria.map(cat => (
+                                <span key={cat} className={`text-xs px-2 py-0.5 rounded-full font-medium border ${categoryChipClass(cat)}`}>{cat}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <p
-                          className="text-xs text-gray-400 line-clamp-2 mt-1 ml-6"
+                          className="text-xs text-muted line-clamp-2"
                           dangerouslySetInnerHTML={{ __html: item.snippet || item.titlos }}
                         />
-                      </div>
+                      </Card>
                     ))}
                   </div>
                 </div>

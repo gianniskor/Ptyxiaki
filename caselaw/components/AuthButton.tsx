@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -8,8 +9,9 @@ import { UserDropdown } from '@/components/ui/user-dropdown';
 
 export function AuthButton() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<{ display_name: string | null; avatar_url: string | null } | null>(null);
+  const [profile, setProfile] = useState<{ display_name: string | null; avatar_url: string | null; role: string | null } | null>(null);
   const [loading, setLoading] = useState(Boolean(supabase));
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function AuthButton() {
 
     supabase
       .from('profiles')
-      .select('first_name, last_name, avatar_url')
+      .select('first_name, last_name, avatar_url, role')
       .eq('id', user.id)
       .single()
       .then(({ data }) => {
@@ -50,7 +52,7 @@ export function AuthButton() {
         const first = data.first_name ?? '';
         const last = data.last_name ?? '';
         const display_name = (first + (last ? ' ' + last : '')).trim() || null;
-        setProfile({ display_name, avatar_url: data.avatar_url ?? null });
+        setProfile({ display_name, avatar_url: data.avatar_url ?? null, role: data.role ?? null });
       });
   }, [supabase, user]);
 
@@ -93,7 +95,15 @@ export function AuthButton() {
       email={user.email ?? ''}
       displayName={profile?.display_name}
       avatarUrl={profile?.avatar_url}
-      onSignOut={() => supabase?.auth.signOut()}
+      isAdmin={profile?.role === 'admin'}
+      // in case of need and this thing doesn't work use this -> onSignOut={async () => { await supabase?.auth.signOut(); router.push('/auth/login'); }}
+      onSignOut={async () => {
+  try {
+    await supabase?.auth.signOut();
+  } finally {
+    router.push('/auth/login');
+  }
+}}
     />
   );
 }

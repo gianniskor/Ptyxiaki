@@ -17,6 +17,7 @@ interface UserDropdownProps {
   email: string;
   displayName?: string | null;
   avatarUrl?: string | null;
+  isAdmin?: boolean;
   onSignOut: () => void;
 }
 
@@ -29,7 +30,7 @@ function getInitials(displayName: string | null | undefined, email: string): str
   return (email[0] ?? "?").toUpperCase();
 }
 
-export function UserDropdown({ email, displayName, avatarUrl, onSignOut }: UserDropdownProps) {
+export function UserDropdown({ email, displayName, avatarUrl, isAdmin, onSignOut }: UserDropdownProps) {
   const initials = getInitials(displayName, email);
   const name = displayName || email;
 
@@ -87,6 +88,14 @@ export function UserDropdown({ email, displayName, avatarUrl, onSignOut }: UserD
               <span className="text-sm">Settings</span>
             </Link>
           </DropdownMenuItem>
+          {isAdmin && (
+            <DropdownMenuItem asChild className="rounded-lg cursor-pointer px-3 py-2 focus:bg-yellow-500/10 text-yellow-400 hover:text-yellow-300">
+              <Link href="/admin" className="flex items-center gap-2.5">
+                <Icon icon="solar:shield-bold-duotone" className="size-4 shrink-0" />
+                <span className="text-sm font-medium">Admin Panel</span>
+              </Link>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuGroup>
 
         <DropdownMenuSeparator className="bg-gray-800" />

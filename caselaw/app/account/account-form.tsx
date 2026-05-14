@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import { Camera, Loader2, BookOpen, MessageSquare, FileText, Scale } from 'lucide-react'
 import { AuthButton } from '@/components/AuthButton'
+import { AdminNavLink } from '@/components/AdminNavLink'
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation'
 
 type Claims = { sub: string; email?: string; [key: string]: unknown }
@@ -123,7 +124,7 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
             <button onClick={() => router.push('/')} className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">Αρχική</button>
             <button onClick={() => router.push('/results')} className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">Αρχείο</button>
             <button className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">AI Chatbot</button>
-            <button className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">N/A</button>
+            <AdminNavLink />
           </div>
 
           <div className="flex-1 flex items-center justify-end gap-6">

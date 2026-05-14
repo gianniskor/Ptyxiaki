@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import { ListBox, Surface, Label, Description, Card } from '@heroui/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Search, FileText, X, Scale, Filter,
-  Landmark, Calendar, Tag
+  Landmark, Calendar, Tag as TagIcon
 } from 'lucide-react';
 import { PdfViewer } from '@/components/PdfViewer';
-import BorderGlow from '@/components/BorderGlow';
 import { AuthButton } from '@/components/AuthButton';
+import { AdminNavLink } from '@/components/AdminNavLink';
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
 import { buildPdfUrl, parseFacets } from '@/lib/api';
 import type { SearchResult, FacetItem, Facets } from '@/lib/types';
@@ -128,43 +129,43 @@ function ResultsContent() {
   const hasActiveFilters = filterDikastirio.length > 0 || filterEtos.length > 0 || filterKatigoria.length > 0;
   const totalPages = Math.ceil(total / rows);
 
+  const categoryChipClass = (_cat: string) => 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30'
+
   const renderFacetSection = (
     title: string,
     icon: React.ReactNode,
     items: FacetItem[],
-    type: 'dikastirio' | 'etos' | 'katigoria',
-    activeValues: string[]
+    selectedValues: string[],
+    onSelectionChange: (values: string[]) => void
   ) => (
-    <div className="bg-[#151518] border border-gray-800/40 rounded-xl p-3">
+    <Surface className="rounded-2xl p-3">
       <div className="flex items-center gap-2 px-2 pb-2 text-sm font-semibold text-gray-300">
         {icon}
         {title}
       </div>
-      <div className="space-y-0.5">
+      <ListBox
+        aria-label={title}
+        selectionMode="multiple"
+        selectedKeys={new Set(selectedValues)}
+        onSelectionChange={(keys) => {
+          if (keys !== 'all') onSelectionChange([...keys] as string[])
+        }}
+      >
         {items.slice(0, 12).map(item => (
-          <button
-            key={item.value}
-            onClick={() => toggleFilter(type, item.value)}
-            className={`flex items-center justify-between w-full px-2 py-1.5 rounded-lg text-sm transition-colors ${
-              activeValues.includes(item.value)
-                ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                : 'text-gray-400 hover:bg-[#2a2a2c] hover:text-gray-200'
-            }`}
-          >
-            <span className="truncate">{item.value}</span>
-            <span className={`text-xs ml-2 shrink-0 ${
-              activeValues.includes(item.value) ? 'text-yellow-500' : 'text-gray-600'
-            }`}>
-              {item.count}
-            </span>
-          </button>
+          <ListBox.Item key={item.value} id={item.value} textValue={item.value}>
+            <div className="flex items-center justify-between w-full min-w-0 gap-2">
+              <Label className="truncate">{item.value}</Label>
+              <Description className="shrink-0">{item.count}</Description>
+            </div>
+            <ListBox.ItemIndicator />
+          </ListBox.Item>
         ))}
-      </div>
-    </div>
+      </ListBox>
+    </Surface>
   );
 
   return (
-    <div className="min-h-screen text-white font-sans relative overflow-x-hidden selection:bg-yellow-500/30">
+    <div className="min-h-screen text-white font-sans relative overflow-x-hidden selection:bg-yellow-500/30" data-theme="dark">
       {/* Animated background */}
       <div className="fixed inset-0 -z-10">
         <BackgroundGradientAnimation interactive />
@@ -183,7 +184,7 @@ function ResultsContent() {
             <button onClick={() => router.push('/')} className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">Αρχική</button>
             <button className="px-6 py-2.5 rounded-full bg-white text-black text-sm font-medium">Αρχείο</button>
             <button className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">AI Chatbot</button>
-            <button className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">N/A</button>
+            <AdminNavLink />
           </div>
 
           <div className="flex-1 flex items-center justify-end gap-6">
@@ -243,7 +244,7 @@ function ResultsContent() {
             ))}
             {filterKatigoria.map(k => (
               <span key={k} className="inline-flex items-center gap-1.5 px-3 py-1 bg-yellow-500/15 text-yellow-400 rounded-full text-xs border border-yellow-500/30">
-                <Tag className="w-3 h-3" /> {k}
+                <TagIcon className="w-3 h-3" /> {k}
                 <button onClick={() => setFilterKatigoria(prev => prev.filter(v => v !== k))}><X className="w-3 h-3" /></button>
               </span>
             ))}
@@ -258,14 +259,14 @@ function ResultsContent() {
 
         <div className="flex gap-6">
           {/* Sidebar - Facets */}
-          <aside className="hidden lg:block w-64 shrink-0">
+          <aside className="hidden lg:block w-64 shrink-0" data-theme="dark">
             <div className="sticky top-[90px] space-y-3">
               <div className="flex items-center gap-2 px-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
                 <Filter className="w-3.5 h-3.5" /> Φίλτρα
               </div>
-              {renderFacetSection('Κατηγορία', <Tag className="w-4 h-4 text-yellow-500/70" />, facets.katigoria, 'katigoria', filterKatigoria)}
-              {renderFacetSection('Δικαστήριο', <Landmark className="w-4 h-4 text-yellow-500/70" />, facets.dikastirio, 'dikastirio', filterDikastirio)}
-              {renderFacetSection('Έτος', <Calendar className="w-4 h-4 text-yellow-500/70" />, facets.etos, 'etos', filterEtos)}
+              {renderFacetSection('Κατηγορία', <TagIcon className="w-4 h-4 text-yellow-500/70" />, facets.katigoria, filterKatigoria, (v) => { setPage(0); setFilterKatigoria(v) })}
+              {renderFacetSection('Δικαστήριο', <Landmark className="w-4 h-4 text-yellow-500/70" />, facets.dikastirio, filterDikastirio, (v) => { setPage(0); setFilterDikastirio(v) })}
+              {renderFacetSection('Έτος', <Calendar className="w-4 h-4 text-yellow-500/70" />, facets.etos, filterEtos, (v) => { setPage(0); setFilterEtos(v) })}
             </div>
           </aside>
 
@@ -274,66 +275,51 @@ function ResultsContent() {
             {loading ? (
               <div className="space-y-4">
                 {[...Array(5)].map((_, i) => (
-                  <div key={i} className="bg-[#151518] border border-gray-800/40 rounded-xl p-5 animate-pulse">
-                    <div className="h-4 bg-gray-800 rounded w-1/3 mb-3" />
-                    <div className="h-3 bg-gray-800/60 rounded w-full mb-2" />
-                    <div className="h-3 bg-gray-800/60 rounded w-2/3" />
-                  </div>
+                  <Card key={i} className="animate-pulse">
+                    <div className="h-4 bg-white/10 rounded-lg w-1/3 mb-2" />
+                    <div className="h-3 bg-white/5 rounded-lg w-full mb-1" />
+                    <div className="h-3 bg-white/5 rounded-lg w-2/3" />
+                  </Card>
                 ))}
               </div>
             ) : (
               <div className="space-y-3">
                 {results.map((item) => (
-                  <BorderGlow
+                  <Card
                     key={item.id}
-                    backgroundColor="#151518"
-                    borderRadius={12}
-                    glowRadius={20}
-                    glowIntensity={0.8}
-                    edgeSensitivity={40}
-                    coneSpread={20}
-                    colors={['#eab308', '#a78bfa', '#f97316']}
-                    glowColor="45 90 65"
-                    fillOpacity={0.3}
+                    className="cursor-pointer group hover:bg-surface-hover transition-colors"
+                    onClick={() => handleResultClick(item)}
                   >
-                    <div
-                      onClick={() => handleResultClick(item)}
-                      className="group p-5 cursor-pointer"
-                    >
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="p-1.5 bg-yellow-500/10 rounded-lg">
+                        <div className="p-1.5 bg-yellow-500/10 rounded-lg shrink-0">
                           <FileText className="w-4 h-4 text-yellow-500" />
                         </div>
                         <div>
-                          <span className="text-base font-bold text-white group-hover:text-yellow-400 transition-colors">
+                          <span className="text-base font-bold text-foreground group-hover:text-yellow-400 transition-colors">
                             {item.arithmos}
                           </span>
-                          <p className="text-xs text-gray-500 mt-0.5">{item.dikastirio} • {item.etos}</p>
+                          <p className="text-xs text-muted mt-0.5">{item.dikastirio} • {item.etos}</p>
                         </div>
                       </div>
-                      <div className="flex gap-1.5 shrink-0">
-                        {item.katigoria?.map(cat => (
-                          <span key={cat} className="text-[10px] px-2 py-0.5 bg-[#2a2a2c] text-gray-400 rounded-md border border-gray-700/50">
-                            {cat}
-                          </span>
-                        ))}
-                      </div>
+                      {item.katigoria?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 shrink-0">
+                          {item.katigoria.map(cat => (
+                            <span key={cat} className={`text-xs px-2 py-0.5 rounded-full font-medium border ${categoryChipClass(cat)}`}>{cat}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-
-                    {/* Title */}
-                    <p className="text-sm text-gray-300 mb-2 line-clamp-1">{item.titlos}</p>
-
-                    {/* Snippet with highlights */}
-                    {item.snippet && (
-                      <p
-                        className="text-sm text-gray-500 line-clamp-3 leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: item.snippet }}
-                      />
-                    )}
-                  </div>
-                  </BorderGlow>
+                    <Card.Header>
+                      <Card.Title className="text-gray-300 line-clamp-1 font-normal">{item.titlos}</Card.Title>
+                      {item.snippet && (
+                        <p
+                          className="text-sm text-muted line-clamp-3 leading-relaxed mt-1"
+                          dangerouslySetInnerHTML={{ __html: item.snippet }}
+                        />
+                      )}
+                    </Card.Header>
+                  </Card>
                 ))}
               </div>
             )}
