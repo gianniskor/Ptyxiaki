@@ -18,6 +18,7 @@ interface UserDropdownProps {
   displayName?: string | null;
   avatarUrl?: string | null;
   isAdmin?: boolean;
+  isOrgAdmin?: boolean;
   onSignOut: () => void;
 }
 
@@ -30,7 +31,7 @@ function getInitials(displayName: string | null | undefined, email: string): str
   return (email[0] ?? "?").toUpperCase();
 }
 
-export function UserDropdown({ email, displayName, avatarUrl, isAdmin, onSignOut }: UserDropdownProps) {
+export function UserDropdown({ email, displayName, avatarUrl, isAdmin, isOrgAdmin, onSignOut }: UserDropdownProps) {
   const initials = getInitials(displayName, email);
   const name = displayName || email;
 
@@ -93,6 +94,14 @@ export function UserDropdown({ email, displayName, avatarUrl, isAdmin, onSignOut
               <Link href="/admin" className="flex items-center gap-2.5">
                 <Icon icon="solar:shield-bold-duotone" className="size-4 shrink-0" />
                 <span className="text-sm font-medium">Admin Panel</span>
+              </Link>
+            </DropdownMenuItem>
+          )}
+          {isOrgAdmin && !isAdmin && (
+            <DropdownMenuItem asChild className="rounded-lg cursor-pointer px-3 py-2 focus:bg-sky-500/10 text-sky-400 hover:text-sky-300">
+              <Link href="/org" className="flex items-center gap-2.5">
+                <Icon icon="solar:buildings-2-bold-duotone" className="size-4 shrink-0" />
+                <span className="text-sm font-medium">Ο οργανισμός μου</span>
               </Link>
             </DropdownMenuItem>
           )}

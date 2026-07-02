@@ -16,11 +16,16 @@ export default async function OnboardingPage() {
   // If profile already has a first name, onboarding is done
   const { data: profile } = await supabase
     .from('profiles')
-    .select('first_name, avatar_url')
+    .select('first_name, avatar_url, organisations(name)')
     .eq('id', data.claims.sub)
     .single()
 
   if (profile?.first_name) redirect('/')
+
+  const organisationName =
+    (Array.isArray(profile?.organisations)
+      ? profile?.organisations[0]?.name
+      : (profile?.organisations as unknown as { name: string } | null)?.name) ?? null
 
   // Pull pre-fill data from auth user_metadata (populated by Google OAuth)
   const { data: userData } = await supabase.auth.getUser()
@@ -39,6 +44,7 @@ export default async function OnboardingPage() {
         <OnboardingForm
           claims={data.claims as { sub: string; email?: string; [key: string]: unknown }}
           initialData={initialData}
+          organisationName={organisationName}
         />
       </div>
     </BackgroundGradientAnimation>

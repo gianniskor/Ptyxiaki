@@ -1,13 +1,14 @@
 from fastapi import FastAPI, UploadFile, File, Query, HTTPException
-from fastapi.responses import FileResponse 
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from typing import AsyncIterator
+import os
 import httpx
 import fitz
 import uuid
 import re
-import json
+from urllib.parse import unquote
 from pathlib import Path
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 app = FastAPI(title="CaseLaw API")
@@ -20,109 +21,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SOLR_URL = "http://localhost:8983/solr/nomologia"
+SOLR_URL     = os.environ["SOLR_URL"]
 
-CATEGORY_FOLDERS = {
-    "Διοικητικό": "dioikitiko",
-    "Αστικό": "astiko",
-    "Ποινικό": "poiniko",
-    "Εμπορικό": "emporiko",
-    "Εργατικό": "ergatiko",
-    "Οικογενειακό": "oikogeneiako",
-}
+# OLLAMA_URL   = os.environ.get("OLLAMA_URL",   "http://localhost:11434")
+# OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
 
-DIKASTIRIA = {
-    "ΣτΕ":       "Συμβούλιο Επικρατείας",
-    "ΑΠ":        "Άρειος Πάγος",
-    "ΕφΑθ":      "Εφετείο Αθηνών",
-    "ΕφΠειρ":    "Εφετείο Πειραιά",
-    "ΠΠρ":       "Πρωτοδικείο Πειραιά",
-    "ΜονΠρΑθ":   "Μονομελές Πρωτοδικείο Αθηνών",
-    "ΜονΠρωτΑθ": "Μονομελές Πρωτοδικείο Αθηνών",
-    "ΔΕΕ":       "Δικαστήριο ΕΕ",
-    "ΕΔΔΑ":      "Ευρωπαϊκό Δικαστήριο Δικαιωμάτων",
-}
-
-HARDCODED_ABBREVIATIONS = ['ΣτΕ', 'ΑΠ', 'ΕφΑθ', 'ΕφΠειρ', 'ΠΠρ', 'ΜονΠρΑθ', 'ΜονΠρωτΑθ', 'ΔΕΕ', 'ΕΔΔΑ']
+LM_STUDIO_URL   = os.environ["LM_STUDIO_URL"]
+LM_STUDIO_MODEL = os.environ["LM_STUDIO_MODEL"]
+DATASET_DIR = Path(os.environ["DATASET_DIR"])
 
 TMP_DIR = Path("temporary/cl_pdfs")
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 
-PDF_DIR = Path("pdf")
-PDF_DIR.mkdir(parents=True, exist_ok=True)
+NUMBER_PREFIX = re.compile(r"^\d+\.?\d*[\s.\-]+")
 
-COURTS_FILE = Path("courts.json")
-if not COURTS_FILE.exists():
-    COURTS_FILE.write_text("[]", encoding="utf-8")
 
-def _read_courts() -> list[dict]:
-    return json.loads(COURTS_FILE.read_text(encoding="utf-8"))
-# temporary function to build the regex pattern till i hardcode all courts in the pattern 
-def _build_pattern() -> re.Pattern:
-    extra = [c["abbreviation"] for c in _read_courts()]
-    all_abbr = HARDCODED_ABBREVIATIONS + [a for a in extra if a not in HARDCODED_ABBREVIATIONS]
-    alternation = '|'.join(re.escape(a) for a in all_abbr)
-    return re.compile(
-        rf'(Απόφαση\s+)?({alternation})\s+([\d.]+)/(\d{{4}})',
-        re.UNICODE
-    )
+KNOWN_ORGS = [
+    "ΤΕΕ", "ΕΛΟΤ", "ΥΠΕΝ", "ΔΕΗ", "ΕΦΚΑ", "ΙΚΑ", "ΟΣΕ",
+    "ΑΔΜΗΕ", "ΔΕΔΔΗΕ", "ISO", "ΚΕΠΕΑ", "ΕΦΕΤ", "ΤΕΙ", "ΕΜΠ",
+]
+ORG_SUFFIX_RE = re.compile(
+    r'\b[\w\s]{2,25}?\s+(?:Α\.?Ε\.?|ΕΠΕ|ΑΕΒΕ|ΑΕ|ΙΚΕ)\b', re.UNICODE
+)
+KNOWN_ORG_RE = re.compile(
+    r'\b(' + '|'.join(re.escape(o) for o in KNOWN_ORGS) + r')\b'
+)
 
-def _write_courts(data: list[dict]):
-    COURTS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-class CourtIn(BaseModel):
-    abbreviation: str
-    full_name: str
-    facet_label: str | None = None
+def clean_name(name: str) -> str:
+    return NUMBER_PREFIX.sub("", name).strip()
 
-class CourtUpdate(BaseModel):
-    abbreviation: str | None = None
-    full_name: str | None = None
-    facet_label: str | None = None
+
+def extract_orgs(text: str) -> list[str]:
+    found = set(KNOWN_ORG_RE.findall(text))
+    found.update(m.group(0).strip() for m in ORG_SUFFIX_RE.finditer(text[:2000]))
+    return list(found)
 
 
 def extract_text(pdf_path: Path) -> str:
     doc = fitz.open(str(pdf_path))
     return "\n".join(page.get_text() for page in doc)
-
-def parse_metadata(text: str, filename: str) -> dict:
-    pattern = _build_pattern()
-    match = pattern.search(text[:500])
-
-    if match:
-        prefix     = match.group(2)
-        number     = match.group(3)
-        year       = int(match.group(4))
-        arithmos   = f"{prefix} {number}/{year}"
-        if prefix in DIKASTIRIA:
-            dikastirio = DIKASTIRIA[prefix]
-        else:
-            court_map  = {c["abbreviation"]: c["full_name"] for c in _read_courts()}
-            dikastirio = court_map.get(prefix, prefix)
-    else:
-        arithmos   = filename
-        dikastirio = "N/A"
-        year       = 0
-
-    lines  = [l.strip() for l in text.split("\n") if l.strip()]
-
-    # Title = lines from the 1st "Απόφαση <court> <number>" up to (not including) the 2nd occurrence
-    match_indices = [i for i, line in enumerate(lines) if pattern.search(line)]
-    if len(match_indices) >= 2:
-        title_parts = lines[match_indices[0]:match_indices[1]]
-    elif len(match_indices) == 1:
-        title_parts = [lines[match_indices[0]]]
-    else:
-        title_parts = [lines[0]] if lines else [filename]
-
-    titlos = " ".join(title_parts)[:300]
-
-    return {
-        "arithmos":   arithmos,
-        "dikastirio": dikastirio,
-        "etos":       year,
-        "titlos":     titlos,
-    }
 
 
 
@@ -131,90 +69,46 @@ def root():
     return {"message": "CaseLaw API is running"}
 
 
-#  Courts abbreviations in json
-
-@app.get("/api/courts")
-def list_courts():
-    return _read_courts()
-
-@app.post("/api/courts", status_code=201)
-def create_court(court: CourtIn):
-    courts = _read_courts()
-    new = {
-        "id": str(uuid.uuid4()),
-        "abbreviation": court.abbreviation,
-        "full_name": court.full_name,
-        "facet_label": court.facet_label or court.full_name,
-    }
-    courts.append(new)
-    _write_courts(courts)
-    return new
-
-@app.patch("/api/courts/{court_id}")
-def update_court(court_id: str, payload: CourtUpdate):
-    courts = _read_courts()
-    for c in courts:
-        if c["id"] == court_id:
-            if payload.abbreviation is not None:
-                c["abbreviation"] = payload.abbreviation
-            if payload.full_name is not None:
-                c["full_name"] = payload.full_name
-            if payload.facet_label is not None:
-                c["facet_label"] = payload.facet_label
-            _write_courts(courts)
-            return c
-    raise HTTPException(status_code=404, detail="Court not found")
-
-@app.delete("/api/courts/{court_id}", status_code=204)
-def delete_court(court_id: str):
-    courts = _read_courts()
-    filtered = [c for c in courts if c["id"] != court_id]
-    if len(filtered) == len(courts):
-        raise HTTPException(status_code=404, detail="Court not found")
-    _write_courts(filtered)
-
-
-# TODO: Reconsider the way the PDFs are stored and indexed (katigoria part, should probably be changed to dikastirio, and maybe etos so it can be more automated)
 @app.post("/api/index")
 async def index_pdf(
     file: UploadFile = File(...),
-    katigoria: list[str] = Query(default=["Αταξινόμητο"])
+    katigoria: str = Query(default="Αταξινόμητο"),
+    ypokatigoria: list[str] = Query(default=[]),
 ):
     base_name = Path(file.filename).name
-    primary_cat = katigoria[0] if katigoria else "Αταξινόμητο"
-    category_folder = CATEGORY_FOLDERS.get(primary_cat, primary_cat.lower())
-    dest_dir = TMP_DIR / category_folder
+    dest_dir = TMP_DIR / "uploads"
     dest_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = dest_dir / base_name
     tmp_path.write_bytes(await file.read())
 
     try:
         text = extract_text(tmp_path)
-        meta = parse_metadata(text, tmp_path.stem)
+        titlos = clean_name(Path(base_name).stem)[:300]
+        orgs = extract_orgs(titlos + " " + text[:3000])
 
         doc = {
-            "id":          str(uuid.uuid4()),
-            "arithmos":    meta["arithmos"],
-            "dikastirio":  meta["dikastirio"],
-            "etos":        meta["etos"],
-            "titlos":      meta["titlos"],
-            "periexomeno": text[:50_000],
-            "katigoria":   katigoria,
-            "pdf_path":    base_name,
+            "id":           str(uuid.uuid4()),
+            "arithmos":     base_name,
+            "titlos":       titlos,
+            "katigoria":    katigoria,
+            "ypokatigoria": ypokatigoria,
+            "organismos":   orgs,
+            "periexomeno":  text[:50_000],
+            "pdf_path":     base_name,
         }
 
         resp = httpx.post(
             f"{SOLR_URL}/update/json/docs",
             params={"commit": "true"},
-            json=doc
+            json=doc,
         )
         resp.raise_for_status()
 
         return {
-            "status":     "ok",
-            "arithmos":   meta["arithmos"],
-            "dikastirio": meta["dikastirio"],
-            "etos":       meta["etos"],
+            "status":    "ok",
+            "titlos":    titlos,
+            "katigoria": katigoria,
+            "organismos": orgs,
         }
 
     except Exception as e:
@@ -225,21 +119,20 @@ async def index_pdf(
 @app.get("/api/search")
 async def search(
     q: str = "*",
-    dikastirio: list[str] = Query(default=None),
-    etos: list[int] = Query(default=None),
+    organismos: list[str] = Query(default=None),
     katigoria: list[str] = Query(default=None),
+    ypokatigoria: list[str] = Query(default=None),
     page: int = 0,
     rows: int = 10,
 ):
     fq = []
-    if dikastirio:
-        fq.append('dikastirio:(' + ' OR '.join(f'"{d}"' for d in dikastirio) + ')')
-    if etos:
-        fq.append('etos:(' + ' OR '.join(str(e) for e in etos) + ')')
+    if organismos:
+        fq.append('organismos:(' + ' OR '.join(f'"{o}"' for o in organismos) + ')')
     if katigoria:
         fq.append('katigoria:(' + ' OR '.join(f'"{k}"' for k in katigoria) + ')')
+    if ypokatigoria:
+        fq.append('ypokatigoria:(' + ' OR '.join(f'"{y}"' for y in ypokatigoria) + ')')
 
-    # Build Solr query
     solr_q = q.strip()
     if not solr_q or solr_q == "*":
         solr_q = "*:*"
@@ -247,7 +140,7 @@ async def search(
     params = {
         "q":              solr_q,
         "defType":        "edismax",
-        "qf":             "titlos^3 arithmos^5 periexomeno",
+        "qf":             "titlos^3 periexomeno katigoria^2 ypokatigoria^2 organismos^2",
         "hl":             "true",
         "hl.fl":          "periexomeno",
         "hl.snippets":    3,
@@ -255,7 +148,7 @@ async def search(
         "hl.simple.pre":  "<mark>",
         "hl.simple.post": "</mark>",
         "facet":          "true",
-        "facet.field":    ["dikastirio", "etos", "katigoria"],
+        "facet.field":    ["katigoria", "ypokatigoria", "organismos"],
         "fq":             fq,
         "start":          page * rows,
         "rows":           rows,
@@ -276,15 +169,14 @@ async def search(
 
 @app.get("/api/facets")
 async def get_facets():
-    """Return all available filter values (katigoria, dikastirio, etos) from Solr."""
     params = {
-        "q":           "*:*",
-        "rows":        0,
-        "facet":       "true",
-        "facet.field": ["dikastirio", "etos", "katigoria"],
-        "facet.limit": -1,
+        "q":              "*:*",
+        "rows":           0,
+        "facet":          "true",
+        "facet.field":    ["katigoria", "ypokatigoria", "organismos"],
+        "facet.limit":    -1,
         "facet.mincount": 1,
-        "wt":          "json",
+        "wt":             "json",
     }
     resp = httpx.get(f"{SOLR_URL}/select", params=params)
     resp.raise_for_status()
@@ -294,10 +186,33 @@ async def get_facets():
         return {flat_list[i]: flat_list[i + 1] for i in range(0, len(flat_list), 2)}
 
     return {
-        "katigoria":  parse_pairs(facet_fields.get("katigoria", [])),
-        "dikastirio": parse_pairs(facet_fields.get("dikastirio", [])),
-        "etos":       parse_pairs(facet_fields.get("etos", [])),
+        "katigoria":    parse_pairs(facet_fields.get("katigoria", [])),
+        "ypokatigoria": parse_pairs(facet_fields.get("ypokatigoria", [])),
+        "organismos":   parse_pairs(facet_fields.get("organismos", [])),
     }
+
+
+@app.get("/api/hierarchy")
+async def get_hierarchy():
+    """Return katigoria → [ypokatigoria, ...] mapping using facet pivot."""
+    params = {
+        "q":              "*:*",
+        "rows":           0,
+        "facet":          "true",
+        "facet.pivot":    "katigoria,ypokatigoria",
+        "facet.limit":    -1,
+        "facet.mincount": 1,
+        "wt":             "json",
+    }
+    resp = httpx.get(f"{SOLR_URL}/select", params=params)
+    resp.raise_for_status()
+    pivot_data = resp.json().get("facet_counts", {}).get("facet_pivot", {})
+    result: dict[str, list[str]] = {}
+    for cat_entry in pivot_data.get("katigoria,ypokatigoria", []):
+        cat  = cat_entry["value"]
+        subs = [s["value"] for s in cat_entry.get("pivot", [])]
+        result[cat] = subs
+    return result
 
 
 @app.get("/api/cases/{case_id}")
@@ -321,7 +236,7 @@ async def update_case(case_id: str, payload: dict):
         raise HTTPException(status_code=404, detail="Document not found")
 
     doc = docs[0]
-    allowed_fields = {"titlos", "dikastirio", "etos", "katigoria", "arithmos"}
+    allowed_fields = {"titlos", "katigoria", "ypokatigoria", "organismos", "arithmos"}
     updated = False
     for field, value in payload.items():
         if field in allowed_fields:
@@ -356,29 +271,332 @@ async def delete_case(case_id: str):
     return {"status": "ok", "deleted": case_id}
 
 
-@app.get("/pdf/{katigoria}/{filename:path}")
-async def serve_pdf(katigoria: str, filename: str):
-    base_name = Path(filename).name
-    folder_name = CATEGORY_FOLDERS.get(katigoria, katigoria)
+class RagQuery(BaseModel):
+    query: str
+    top_k: int = 5
+    katigoria: list[str] = []
+    ypokatigoria: list[str] = []
 
-    # 1. Check temp folder first (uploaded via admin panel)
-    tmp_cat_path = TMP_DIR / folder_name / base_name
-    if tmp_cat_path.exists() and tmp_cat_path.is_file():
-        return FileResponse(tmp_cat_path, media_type="application/pdf")
 
-    for fallback_path in TMP_DIR.rglob(base_name):
-        if fallback_path.is_file():
-            return FileResponse(fallback_path, media_type="application/pdf")
+@app.post("/api/rag")
+async def rag_endpoint(body: RagQuery):
+    """Retrieve top-K docs from Solr then generate an answer via Ollama/Qwen."""
+    # ── 1. Retrieve from Solr ───────────────────────────────────────────────
+    fq = []
+    if body.katigoria:
+        fq.append('katigoria:(' + ' OR '.join(f'"{k}"' for k in body.katigoria) + ')')
+    if body.ypokatigoria:
+        fq.append('ypokatigoria:(' + ' OR '.join(f'"{y}"' for y in body.ypokatigoria) + ')')
 
-    # 2. Fall back to pdf/ folder (indexed via indexer.py)
-    base_folder = Path("pdf")
-    exact_path = base_folder / folder_name / base_name
-    if exact_path.exists() and exact_path.is_file():
-        return FileResponse(exact_path, media_type="application/pdf")
+    solr_params = {
+        "q":              body.query,
+        "defType":        "edismax",
+        "qf":             "titlos^3 periexomeno katigoria^2",
+        "rows":           body.top_k,
+        "fl":             "id,titlos,katigoria",
+        "fq":             fq,
+        "wt":             "json",
+        # Highlighting
+        "hl":             "true",
+        "hl.fl":          "periexomeno",
+        "hl.snippets":    3,
+        "hl.fragsize":    300,
+        "hl.simple.pre":  "",
+        "hl.simple.post": "",
+    }
+    solr_resp = httpx.get(f"{SOLR_URL}/select", params=solr_params, timeout=15)
+    solr_resp.raise_for_status()
+    solr_json  = solr_resp.json()
+    docs       = solr_json["response"]["docs"]
+    highlights = solr_json.get("highlighting", {})
 
-    if base_folder.exists():
-        for fallback_path in base_folder.rglob(base_name):
-            if fallback_path.is_file():
-                return FileResponse(fallback_path, media_type="application/pdf")
+    if not docs:
+        return {"answer": "Δεν βρέθηκαν σχετικά έγγραφα για την ερώτησή σας.", "sources": []}
 
-    raise HTTPException(status_code=404, detail=f"Το αρχείο {base_name} δεν βρέθηκε στον δίσκο.")
+    # ── 2. Build context from highlighting snippets ─────────────────────────
+    context_parts = []
+    for i, doc in enumerate(docs, 1):
+        hl_snippets = highlights.get(doc["id"], {}).get("periexomeno", [])
+        snippet     = " … ".join(hl_snippets).strip() if hl_snippets else ""
+        cat         = ", ".join(doc.get("katigoria") or [])
+        context_parts.append(
+            f"ΠΗΓΗ [{i}] | Τίτλος: {doc.get('titlos', '')} | Κατηγορία: {cat}\n{snippet}"
+        )
+    context = "\n\n---\n\n".join(context_parts)
+
+    system_msg = (
+        "Είσαι αυστηρός νομικός βοηθός. Κανόνες:\n"
+        "1. Απάντα ΜΟΝΟ βάσει των παρεχόμενων αποσπασμάτων — μην χρησιμοποιείς εξωτερική γνώση.\n"
+        "2. Αν δεν υπάρχει επαρκής πληροφορία, απάντα ακριβώς: «Δεν βρέθηκε απάντηση».\n"
+        "3. Παράθεσε πηγές χρησιμοποιώντας αγκύλες, π.χ. [1], [2].\n"
+        "4. Απάντα πάντα στα Ελληνικά."
+    )
+    user_msg = (
+        f"ΑΠΟΣΠΑΣΜΑΤΑ:\n{context}\n\n"
+        f"ΕΡΩΤΗΣΗ: {body.query}\n\n"
+        "ΑΠΑΝΤΗΣΗ:"
+    )
+
+    # ── 3. Call Ollama ──────────────────────────────────────────────────────
+    ollama_resp = httpx.post(
+        f"{LM_STUDIO_URL}/chat/completions",
+        json={
+            "model":  LM_STUDIO_MODEL,
+            "stream": False,
+            "temperature": 0.3,
+            "frequency_penalty": 1.1,
+            "top_p": 0.5,
+            "max_tokens": 4096,
+            "enable_thinking": True,
+            "messages": [
+                {"role": "system", "content": system_msg},
+                {"role": "user",   "content": user_msg},
+            ],
+        },
+        timeout=120,
+    )
+    ollama_resp.raise_for_status()
+    answer = ollama_resp.json()["choices"][0]["message"]["content"]
+
+    sources = [
+        {"titlos": d.get("titlos", ""), "katigoria": d.get("katigoria", [])}
+        for d in docs
+    ]
+    return {"answer": answer, "sources": sources}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FACT-CHECK  (streaming, multi-step RAG)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class FactCheckQuery(BaseModel):
+    text: str
+    top_k: int = 5
+    katigoria: list[str] = []
+    ypokatigoria: list[str] = []
+
+
+@app.post("/api/fact-check")
+async def fact_check_endpoint(body: FactCheckQuery):
+    """Multi-step RAG fact-checker that streams the final verdict word-by-word."""
+
+    async with httpx.AsyncClient(timeout=120) as client:
+
+        # ── Step 1: Keyword extraction via LM Studio ──────────────────────────
+        sys_prompt_kw = (
+            "Είσαι ένας αυστηρός αλγόριθμος εξαγωγής όρων αναζήτησης (Search Query Generator). "
+            "Μην κάνεις ανάλυση, μην κάνεις reasoning, μην γράφεις τίποτα άλλο εκτός από τις λέξεις-κλειδιά. "
+            "Οφείλεις να επιστρέφεις ΜΟΝΟ έως 8 λέξεις-κλειδιά, χωρισμένες με κενό."
+            ""
+        )
+        
+        user_prompt_kw = (
+            "Μετάτρεψε την παρακάτω ερώτηση σε λέξεις-κλειδιά για νομική/τεχνική αναζήτηση.\n"
+            "ΑΥΣΤΗΡΟΙ ΚΑΝΟΝΕΣ:\n"
+            "1. ΔΙΕΓΡΑΨΕ εντελώς ρήματα, άρθρα, προθέσεις και αντωνυμίες (π.χ. θέλω, να, μου, πώς, τι).\n"
+            "2. ΜΕΤΑΤΡΕΨΕ τις λέξεις στις αντίστοιχες συνώνυμες στα νέα ελληνικά.\n"
+            "3. ΑΠΑΓΟΡΕΥΕΤΑΙ να προσθέσεις δικές σου έννοιες που δεν υπάρχουν στο κείμενο.\n"
+            "4. ΜΗΝ δικαιολογείς την απάντησή σου. Γράψε ΜΟΝΟ τις λέξεις.\n\n"
+            f"Ερώτηση χρήστη: '{body.text}'\n"
+            "Λέξεις-Κλειδιά:\n"
+        )
+
+        kw_resp = await client.post(
+            f"{LM_STUDIO_URL}/chat/completions",
+            json={
+                "model":  LM_STUDIO_MODEL,
+                "stream": False,
+                "temperature": 0.0,
+                "top_p": 0.5,
+                "frequency_penalty": 1.2,
+                # "presence_penalty": 0.0,
+                "max_tokens": 4000,
+                "enable_thinking": False,
+                "messages": [
+                    {"role": "system", "content": sys_prompt_kw},
+                    {"role": "user",   "content": user_prompt_kw},
+                ],
+            },
+        )
+        kw_resp.raise_for_status()
+        keywords = kw_resp.json()["choices"][0]["message"]["content"].strip()
+        print(keywords)
+
+        # ── Step 2: Solr retrieval with highlighting ───────────────────────
+        fq = []
+        if body.katigoria:
+            fq.append('katigoria:(' + ' OR '.join(f'"{k}"' for k in body.katigoria) + ')')
+        if body.ypokatigoria:
+            fq.append('ypokatigoria:(' + ' OR '.join(f'"{y}"' for y in body.ypokatigoria) + ')')
+
+        solr_resp = await client.get(
+            f"{SOLR_URL}/select",
+            params={
+                "q":              keywords,
+                "defType":        "edismax",
+                "qf":             "titlos^3 periexomeno",
+                "rows":           body.top_k,
+                "fl":             "id,titlos,katigoria,periexomeno,pdf_path,arithmos",
+                "fq":             fq,
+                "wt":             "json",
+                "hl":             "true",
+                "hl.fl":          "periexomeno",
+                "hl.snippets":    3,
+                "hl.fragsize":    300,
+                "hl.simple.pre":  "",
+                "hl.simple.post": "",
+            },
+        )
+        solr_resp.raise_for_status()
+        solr_json  = solr_resp.json()
+        docs = solr_json["response"]["docs"]
+        highlights = solr_json.get("highlighting", {})
+
+        if not docs:
+            async def no_docs() -> AsyncIterator[str]:
+                yield "Δεν βρέθηκαν σχετικά έγγραφα για έλεγχο."
+            return StreamingResponse(no_docs(), media_type="text/plain")
+
+        # Build context string με δικλείδα ασφαλείας (Fallback)
+        context_parts: list[str] = []
+        source_meta: list[dict] = []
+        for i, doc in enumerate(docs, 1):
+            doc_id = doc["id"]
+            hl_snippets = highlights.get(doc_id, {}).get("periexomeno", [])
+            
+            if hl_snippets:
+                # Αν υπάρχουν highlights, χρησιμοποίησέ τα
+                snippet = " … ".join(hl_snippets).strip()
+            else:
+                # FALLBACK: Αν το highlight είναι άδειο, πάρε την αρχή του κειμένου
+                raw_content = doc.get("periexomeno", "")
+                if isinstance(raw_content, list):
+                    raw_content = " ".join(raw_content)
+                snippet = raw_content[:1000].strip() + " [Πλήρες κείμενο - Δεν βρέθηκαν αποσπάσματα]"
+
+            context_parts.append(
+                f"ΠΗΓΗ [{i}] | Τίτλος: {doc.get('titlos', 'Άγνωστος Τίτλος')}\n"
+                f"Κείμενο: {snippet}"
+            )
+
+            # Μετα-δεδομένα πηγής για το frontend (μονή γραμμή, χωρίς να σπάει το footer parsing)
+            preview = re.sub(r"\s+", " ", snippet).strip()
+            pdf_val = doc.get("pdf_path") or doc.get("arithmos") or ""
+            if isinstance(pdf_val, list):
+                pdf_val = pdf_val[0] if pdf_val else ""
+            title_val = doc.get("titlos", "Άγνωστη πηγή")
+            if isinstance(title_val, list):
+                title_val = " ".join(title_val)
+            source_meta.append({
+                "title":    title_val,
+                "snippet":  preview[:300],
+                "pdf_path": str(pdf_val),
+            })
+            
+        context = "\n\n---\n\n".join(context_parts)
+        
+        # ΕΚΤΥΠΩΣΗ ΓΙΑ DEBUGGING: Δες στο τερματικό της Python τι στέλνεις στο LLM!
+        print("====== CONTEXT SENT TO QWEN ======")
+        print(context)
+        print("==================================")
+
+        # ── Step 3 & 4: Streaming fact-check via Ollama ────────────────────
+        system_msg = (
+            "Είσαι νομικός βοηθός. Απάντα ΠΑΝΤΑ στα Ελληνικά. "
+            "Χρησιμοποίησε ΜΟΝΟ τις πηγές που σου δίνονται. "
+            "Παράθεσε παραπομπές π.χ. [1], [2]. "
+            "Αν οι πηγές έχουν μερική πληροφορία, χρησιμοποίησέ την — μην αρνείσαι να απαντήσεις. "
+            "Απάντησε απευθείας, χωρίς να αναλύεις τη σκέψη σου ή να γράφεις ενδιαφέροντα βήματα ανάλυσης."
+)
+        user_msg = (
+            f"ΕΡΩΤΗΣΗ: {body.text}\n\n"
+            f"ΠΗΓΕΣ:\n{context}\n\n"
+            "Απάντησε βάσει των πηγών:"
+        )
+
+        # Collect sources footer — μορφή ανά γραμμή: "[i] τίτλος|@|snippet|@|pdf_path|@|keywords"
+        kw_clean = re.sub(r"\s+", " ", keywords.replace("|", " ")).strip()
+        sources_footer = "\n\n**Πηγές:**\n" + "\n".join(
+            f"[{i}] {m['title']}|@|{m['snippet']}|@|{m['pdf_path']}|@|{kw_clean}"
+            for i, m in enumerate(source_meta, 1)
+        )
+
+        async def stream_ollama() -> AsyncIterator[str]:
+            async with httpx.AsyncClient(timeout=180) as stream_client:
+                async with stream_client.stream(
+                    "POST",
+                    f"{LM_STUDIO_URL}/chat/completions",
+                    json={
+                        "model":  LM_STUDIO_MODEL,
+                        "stream": True,
+                        "temperature": 0.3,
+                        "top_p": 0.5,
+                        "max_tokens": 8000,
+                        "enable_thinking": True,
+                        "messages": [
+                            {"role": "system", "content": system_msg},
+                            {"role": "user",   "content": user_msg},
+                        ],
+                    },
+                ) as resp:
+                    import json as _json
+                    in_think = False
+                    think_closed = False
+                    async for raw_line in resp.aiter_lines():
+                        if raw_line.startswith("data: "):
+                            data_str = raw_line[6:].strip()
+                            
+                            if data_str == "[DONE]":
+                                break
+                                
+                            try:
+                                chunk = _json.loads(data_str)
+                                delta = chunk["choices"][0].get("delta", {})
+                                reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
+                                token = delta.get("content") or ""
+
+                                # Reasoning tokens — τύλιξέ τα σε <think>...</think>
+                                if reasoning:
+                                    if not in_think:
+                                        yield "<think>"
+                                        in_think = True
+                                    yield reasoning
+
+                                if token:
+                                    if in_think and not think_closed:
+                                        yield "</think>"
+                                        think_closed = True
+                                    yield token
+                            except (ValueError, IndexError, KeyError):
+                                continue
+
+                    # Κλείσε το think αν για κάποιο λόγο δεν ήρθε content μετά το reasoning
+                    if in_think and not think_closed:
+                        yield "</think>"
+                                
+            yield sources_footer
+
+        return StreamingResponse(stream_ollama(), media_type="text/plain")
+
+
+@app.get("/pdf/{filename:path}")
+async def serve_pdf(filename: str):
+    decoded = unquote(filename).lstrip("/\\")
+    rel = Path(decoded)
+
+    # 1. Full relative path inside dataset
+    full_path = DATASET_DIR / rel
+    if full_path.exists() and full_path.is_file():
+        return FileResponse(full_path, media_type="application/pdf")
+
+    # 2. Search by filename only inside dataset (handles encoding mismatches)
+    for match in DATASET_DIR.rglob(rel.name):
+        if match.is_file():
+            return FileResponse(match, media_type="application/pdf")
+
+    # 3. Fallback: uploaded files in temp dir
+    for match in TMP_DIR.rglob(rel.name):
+        if match.is_file():
+            return FileResponse(match, media_type="application/pdf")
+
+    raise HTTPException(status_code=404, detail=f"Αρχείο δεν βρέθηκε: {filename}")

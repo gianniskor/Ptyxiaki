@@ -11,7 +11,7 @@ export function AuthButton() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<{ display_name: string | null; avatar_url: string | null; role: string | null } | null>(null);
+  const [profile, setProfile] = useState<{ display_name: string | null; avatar_url: string | null; role: string | null; org_role: string | null } | null>(null);
   const [loading, setLoading] = useState(Boolean(supabase));
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export function AuthButton() {
 
     supabase
       .from('profiles')
-      .select('first_name, last_name, avatar_url, role')
+      .select('first_name, last_name, avatar_url, role, org_role')
       .eq('id', user.id)
       .single()
       .then(({ data }) => {
@@ -52,7 +52,7 @@ export function AuthButton() {
         const first = data.first_name ?? '';
         const last = data.last_name ?? '';
         const display_name = (first + (last ? ' ' + last : '')).trim() || null;
-        setProfile({ display_name, avatar_url: data.avatar_url ?? null, role: data.role ?? null });
+        setProfile({ display_name, avatar_url: data.avatar_url ?? null, role: data.role ?? null, org_role: data.org_role ?? null });
       });
   }, [supabase, user]);
 
@@ -96,6 +96,7 @@ export function AuthButton() {
       displayName={profile?.display_name}
       avatarUrl={profile?.avatar_url}
       isAdmin={profile?.role === 'admin'}
+      isOrgAdmin={profile?.org_role === 'org_admin'}
       // in case of need and this thing doesn't work use this -> onSignOut={async () => { await supabase?.auth.signOut(); router.push('/auth/login'); }}
       onSignOut={async () => {
   try {

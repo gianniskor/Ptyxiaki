@@ -35,7 +35,34 @@ export async function updateSession(request: NextRequest) {
   // issues with users being randomly logged out.
   // IMPORTANT: If you remove getClaims() and you use server-side rendering
   // with the Supabase client, your users may be randomly logged out.
-  await supabase.auth.getClaims()
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const claims = claimsData?.claims
+
+  // Signup-approval gate: block non-approved users from the app until an
+  // admin approves them. Auth, error and onboarding routes stay accessible.
+  if (claims?.sub) {
+    const path = request.nextUrl.pathname
+    const isExempt =
+      path.startsWith('/auth') ||
+      path.startsWith('/error') ||
+      path.startsWith('/onboarding') ||
+      path.startsWith('/account')
+
+    if (!isExempt) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('status, role')
+        .eq('id', claims.sub)
+        .single()
+
+      if (profile && profile.role !== 'admin' && profile.status !== 'approved') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/auth/pending-approval'
+        url.search = ''
+        return NextResponse.redirect(url)
+      }
+    }
+  }
 
   return supabaseResponse
 }

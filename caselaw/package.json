@@ -19,10 +19,14 @@
     "@supabase/supabase-js": "^2.105.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.7.0",
+    "embla-carousel-react": "^8.6.0",
+    "lucide-react": "^1.18.0",
+    "mammoth": "^1.12.0",
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-icons": "^5.6.0",
+    "react-pdf": "^10.4.1",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {

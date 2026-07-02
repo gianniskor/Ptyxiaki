@@ -41,13 +41,14 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
   const [phone, setPhone] = useState('')
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
+  const [organisationName, setOrganisationName] = useState<string | null>(null)
 
   const getProfile = useCallback(async () => {
     if (!claims?.sub || !supabase) { setLoading(false); return }
     setLoading(true)
     const { data } = await supabase
       .from('profiles')
-      .select('first_name, last_name, phone, avatar_url')
+      .select('first_name, last_name, phone, avatar_url, organisations(name)')
       .eq('id', claims.sub)
       .single()
     if (data) {
@@ -56,6 +57,8 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
       setPhone(data.phone ?? '')
       setAvatarUrl(data.avatar_url ?? null)
       setAvatarPreview(data.avatar_url ?? null)
+      const org = data.organisations as { name: string } | { name: string }[] | null
+      setOrganisationName(Array.isArray(org) ? (org[0]?.name ?? null) : (org?.name ?? null))
     }
     setLoading(false)
   }, [claims, supabase])
@@ -123,7 +126,7 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
           <div className="hidden md:flex bg-[#1a1a1c]/80 backdrop-blur-sm border border-gray-800 rounded-full shadow-lg p-1">
             <button onClick={() => router.push('/')} className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">Αρχική</button>
             <button onClick={() => router.push('/results')} className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">Αρχείο</button>
-            <button className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">AI Chatbot</button>
+            <button  onClick={() => router.push('/chatbot')} className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">AI Chatbot</button>
             <AdminNavLink />
           </div>
 
@@ -163,13 +166,13 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
               <p className="text-sm text-gray-500 mt-0.5">{claims?.email ?? ''}</p>
             </div>
             <div className="w-full pt-2 border-t border-gray-800 text-left space-y-1">
-              <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Stats</p>
+              <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Στατιστικά</p>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Bookmarks</span>
+                <span className="text-gray-500">Αγαπημένα</span>
                 <span className="text-gray-300 font-medium">4</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">AI conversations</span>
+                <span className="text-gray-500">Chatbot συνομιλίες</span>
                 <span className="text-gray-300 font-medium">5</span>
               </div>
             </div>
@@ -177,11 +180,11 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
 
           {/* Right: Edit form */}
           <div className="lg:col-span-2 bg-[#151518] border border-gray-800 rounded-2xl p-6 space-y-5">
-            <h2 className="text-base font-semibold text-white">Edit profile</h2>
+            <h2 className="text-base font-semibold text-white">Επεξεργασία προφίλ</h2>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs text-gray-400 mb-1 block">First name</label>
+                <label className="text-xs text-gray-400 mb-1 block">Όνομα</label>
                 <input
                   type="text"
                   value={firstName}
@@ -191,7 +194,7 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-400 mb-1 block">Last name</label>
+                <label className="text-xs text-gray-400 mb-1 block">Επώνυμο</label>
                 <input
                   type="text"
                   value={lastName}
@@ -213,7 +216,7 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
             </div>
 
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Phone <span className="text-gray-600">(optional)</span></label>
+              <label className="text-xs text-gray-400 mb-1 block">Τηλέφωνο <span className="text-gray-600">(προαιρετικό)</span></label>
               <input
                 type="tel"
                 value={phone}
@@ -224,8 +227,21 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
               />
             </div>
 
+            {organisationName && (
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Οργανισμός</label>
+                <input
+                  type="text"
+                  value={organisationName}
+                  disabled
+                  className="w-full px-4 py-3 rounded-xl bg-[#0f0f11] border border-gray-800 text-sm text-gray-500"
+                />
+                <p className="text-[11px] text-gray-600 mt-1">Διαχειρίζεται από τον διαχειριστή του οργανισμού σας.</p>
+              </div>
+            )}
+
             {error && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">{error}</p>}
-            {success && <p className="text-sm text-green-400 bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3">Profile updated.</p>}
+            {success && <p className="text-sm text-green-400 bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3">Το προφίλ ενημερώθηκε.</p>}
 
             <div className="flex gap-3 pt-1">
               <button
@@ -244,8 +260,8 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
         <div>
           <div className="flex items-center gap-2 mb-4">
             <BookOpen className="w-4 h-4 text-yellow-500/70" />
-            <h2 className="text-base font-semibold text-white">Bookmarked cases</h2>
-            <span className="text-xs text-gray-600 bg-gray-800 rounded-full px-2 py-0.5 ml-1">Coming soon</span>
+            <h2 className="text-base font-semibold text-white">Αγαπημένες υποθέσεις</h2>
+            <span className="text-xs text-gray-600 bg-gray-800 rounded-full px-2 py-0.5 ml-1">Σύντομα διαθέσιμο</span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {PLACEHOLDER_BOOKMARKS.map((item) => (
@@ -268,8 +284,8 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
         <div>
           <div className="flex items-center gap-2 mb-4">
             <MessageSquare className="w-4 h-4 text-yellow-500/70" />
-            <h2 className="text-base font-semibold text-white">Recent AI conversations</h2>
-            <span className="text-xs text-gray-600 bg-gray-800 rounded-full px-2 py-0.5 ml-1">Coming soon</span>
+            <h2 className="text-base font-semibold text-white">Πρόσφατες συνομιλίες με Chatbot</h2>
+            <span className="text-xs text-gray-600 bg-gray-800 rounded-full px-2 py-0.5 ml-1">Σύντομα διαθέσιμο</span>
           </div>
           <div className="bg-[#151518] border border-gray-800 rounded-2xl divide-y divide-gray-800 opacity-50 cursor-not-allowed select-none">
             {PLACEHOLDER_CONVERSATIONS.map((item) => (
@@ -279,7 +295,7 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
                   <p className="text-sm text-gray-300 truncate">{item.title}</p>
                 </div>
                 <div className="flex items-center gap-4 shrink-0 ml-4">
-                  <span className="text-xs text-gray-600">{item.messages} messages</span>
+                  <span className="text-xs text-gray-600">{item.messages} μηνύματα</span>
                   <span className="text-xs text-gray-600">{item.date}</span>
                 </div>
               </div>

@@ -1,18 +1,20 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
-import { ListBox, Surface, Label, Description, Card } from '@heroui/react';
+import { Card } from '@heroui/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
-  Search, FileText, X, Scale, Filter,
-  Landmark, Calendar, Tag as TagIcon
+  Search, X, Scale, Filter,
+  Landmark, Tag as TagIcon, Building2
 } from 'lucide-react';
 import { PdfViewer } from '@/components/PdfViewer';
 import { AuthButton } from '@/components/AuthButton';
 import { AdminNavLink } from '@/components/AdminNavLink';
+import { FileTypeIcon, getFileTypeStyle, stripFileExtension } from '@/components/FileTypeIcon';
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
-import { buildPdfUrl, parseFacets } from '@/lib/api';
-import type { SearchResult, FacetItem, Facets } from '@/lib/types';
+import { buildPdfUrl, parseFacets, truncateAtDots, fetchHierarchy, fetchGlobalFacets, mergeFacetCounts } from '@/lib/api';
+import { FacetSection, SubcategorySection } from '@/components/Facets';
+import type { SearchResult, Facets } from '@/lib/types';
 
 function ResultsContent() {
   const searchParams = useSearchParams();
@@ -24,15 +26,17 @@ function ResultsContent() {
   const [inputValue, setInputValue] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
-  const [facets, setFacets] = useState<Facets>({ dikastirio: [], etos: [], katigoria: [] });
+  const [facets, setFacets] = useState<Facets>({ katigoria: [], ypokatigoria: [], organismos: [] });
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(Number(searchParams.get('page')) || 0);
   const rows = 10;
 
   // Active filters
-  const [filterDikastirio, setFilterDikastirio] = useState<string[]>(searchParams.getAll('dikastirio'));
-  const [filterEtos, setFilterEtos] = useState<string[]>(searchParams.getAll('etos'));
+  const [filterYpokatigoria, setFilterYpokatigoria] = useState<string[]>(searchParams.getAll('ypokatigoria'));
+  const [filterOrganismos, setFilterOrganismos] = useState<string[]>(searchParams.getAll('organismos'));
   const [filterKatigoria, setFilterKatigoria] = useState<string[]>(searchParams.getAll('katigoria'));
+  const [hierarchy, setHierarchy] = useState<Record<string, string[]>>({});
+  const [globalFacets, setGlobalFacets] = useState<Facets>({ katigoria: [], ypokatigoria: [], organismos: [] });
 
   // PDF viewer
   const [activePdfUrl, setActivePdfUrl] = useState<string | null>(null);
@@ -44,8 +48,8 @@ function ResultsContent() {
     setLoading(true);
     try {
       const params = new URLSearchParams({ q: query.trim() || '*', rows: String(rows), page: String(page) });
-      filterDikastirio.forEach(d => params.append('dikastirio', d));
-      filterEtos.forEach(e => params.append('etos', e));
+      filterYpokatigoria.forEach(y => params.append('ypokatigoria', y));
+      filterOrganismos.forEach(o => params.append('organismos', o));
       filterKatigoria.forEach(k => params.append('katigoria', k));
 
       const res = await fetch(`http://localhost:8000/api/search?${params}`);
@@ -67,22 +71,30 @@ function ResultsContent() {
     } finally {
       setLoading(false);
     }
-  }, [query, page, filterDikastirio, filterEtos, filterKatigoria]);
+  }, [query, page, filterYpokatigoria, filterOrganismos, filterKatigoria]);
 
   useEffect(() => {
     doSearch();
   }, [doSearch]);
 
+  useEffect(() => {
+    fetchHierarchy().then(setHierarchy).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchGlobalFacets().then(setGlobalFacets).catch(() => {});
+  }, []);
+
   // Update URL when filters change
   useEffect(() => {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
-    filterDikastirio.forEach(d => params.append('dikastirio', d));
-    filterEtos.forEach(e => params.append('etos', e));
+    filterYpokatigoria.forEach(y => params.append('ypokatigoria', y));
+    filterOrganismos.forEach(o => params.append('organismos', o));
     filterKatigoria.forEach(k => params.append('katigoria', k));
     if (page > 0) params.set('page', String(page));
     router.replace(`/results?${params.toString()}`, { scroll: false });
-  }, [query, filterDikastirio, filterEtos, filterKatigoria, page, router]);
+  }, [query, filterYpokatigoria, filterOrganismos, filterKatigoria, page, router]);
 
   // Escape to close PDF
   useEffect(() => {
@@ -108,70 +120,77 @@ function ResultsContent() {
     setActivePdfTitle(result.titlos);
   };
 
-  const toggleFilter = (type: 'dikastirio' | 'etos' | 'katigoria', value: string) => {
+  const toggleFilter = (type: 'ypokatigoria' | 'organismos' | 'katigoria', value: string) => {
     setPage(0);
-    if (type === 'dikastirio') {
-      setFilterDikastirio(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
-    } else if (type === 'etos') {
-      setFilterEtos(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
+    if (type === 'ypokatigoria') {
+      setFilterYpokatigoria(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
+    } else if (type === 'organismos') {
+      setFilterOrganismos(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
     } else {
       setFilterKatigoria(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
     }
   };
 
   const clearAllFilters = () => {
-    setFilterDikastirio([]);
-    setFilterEtos([]);
+    setFilterYpokatigoria([]);
+    setFilterOrganismos([]);
     setFilterKatigoria([]);
     setPage(0);
   };
 
-  const hasActiveFilters = filterDikastirio.length > 0 || filterEtos.length > 0 || filterKatigoria.length > 0;
+  const hasActiveFilters = filterYpokatigoria.length > 0 || filterOrganismos.length > 0 || filterKatigoria.length > 0;
   const totalPages = Math.ceil(total / rows);
 
-  const categoryChipClass = (_cat: string) => 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30'
+  // Facet counts only refresh to reflect the filtered results when a subcategory
+  // or an organisation is selected, otherwise they keep the full master counts.
+  const useLiveCounts = filterYpokatigoria.length > 0 || filterOrganismos.length > 0;
+  // When a category is picked, the organisations and subcategories also refresh
+  // their counts to reflect the category-filtered results.
+  const catPicked = filterKatigoria.length > 0;
 
-  const renderFacetSection = (
-    title: string,
-    icon: React.ReactNode,
-    items: FacetItem[],
-    selectedValues: string[],
-    onSelectionChange: (values: string[]) => void
-  ) => (
-    <Surface className="rounded-2xl p-3">
-      <div className="flex items-center gap-2 px-2 pb-2 text-sm font-semibold text-gray-300">
-        {icon}
-        {title}
-      </div>
-      <ListBox
-        aria-label={title}
-        selectionMode="multiple"
-        selectedKeys={new Set(selectedValues)}
-        onSelectionChange={(keys) => {
-          if (keys !== 'all') onSelectionChange([...keys] as string[])
-        }}
-      >
-        {items.slice(0, 12).map(item => (
-          <ListBox.Item key={item.value} id={item.value} textValue={item.value}>
-            <div className="flex items-center justify-between w-full min-w-0 gap-2">
-              <Label className="truncate">{item.value}</Label>
-              <Description className="shrink-0">{item.count}</Description>
-            </div>
-            <ListBox.ItemIndicator />
-          </ListBox.Item>
-        ))}
-      </ListBox>
-    </Surface>
+  // Facet options always reflect the full master list (so they never disappear),
+  // with counts taken from the current search results (only when useLiveCounts).
+  const katigoriaItems = (useLiveCounts
+    ? mergeFacetCounts(globalFacets.katigoria, facets.katigoria)
+    : globalFacets.katigoria).filter(i => i.count > 0);
+  let organismosItems = (useLiveCounts || catPicked
+    ? mergeFacetCounts(globalFacets.organismos, facets.organismos)
+    : globalFacets.organismos).filter(i => i.count > 0);
+
+  // When a category is picked, only show organisations associated with the
+  // selected categories (i.e. those present in the category-filtered results).
+  if (catPicked) {
+    const associatedOrgs = new Set(facets.organismos.filter(i => i.count > 0).map(i => i.value));
+    organismosItems = organismosItems.filter(i => associatedOrgs.has(i.value));
+  }
+
+  // Subcategories grouped by parent category, ordered by the proper category order.
+  const ypoCountMap = new Map(
+    (useLiveCounts || catPicked ? facets.ypokatigoria : globalFacets.ypokatigoria).map(i => [i.value, i.count])
   );
+  const catOrder = globalFacets.katigoria.length
+    ? globalFacets.katigoria.map(c => c.value)
+    : Object.keys(hierarchy);
+  const catsToShow = filterKatigoria.length > 0
+    ? catOrder.filter(c => filterKatigoria.includes(c))
+    : catOrder;
+  const subGroups = catsToShow
+    .map(cat => ({
+      cat,
+      subs: (hierarchy[cat] || [])
+        .map(s => ({ value: s, count: ypoCountMap.get(s) ?? 0 }))
+        .filter(s => s.count > 0)
+        .sort((a, b) => b.count - a.count),
+    }))
+    .filter(g => g.subs.length > 0);
 
   return (
-    <div className="min-h-screen text-white font-sans relative overflow-x-hidden selection:bg-yellow-500/30" data-theme="dark">
+    <div className="min-h-screen text-white font-sans relative selection:bg-yellow-500/30" data-theme="dark">
       {/* Animated background */}
       <div className="fixed inset-0 -z-10">
         <BackgroundGradientAnimation interactive />
         <div className="absolute inset-0 bg-black/50" />
       </div>
-
       {/* --- NAVBAR --- */}
       <nav className="sticky top-0 z-30 backdrop-blur-md ">
         <div className="flex items-center px-8 py-6 max-w-7xl mx-auto">
@@ -183,7 +202,7 @@ function ResultsContent() {
           <div className="hidden md:flex bg-[#1a1a1c]/80 backdrop-blur-sm border border-gray-800 rounded-full shadow-lg p-1">
             <button onClick={() => router.push('/')} className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">Αρχική</button>
             <button className="px-6 py-2.5 rounded-full bg-white text-black text-sm font-medium">Αρχείο</button>
-            <button className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">AI Chatbot</button>
+            <button onClick={() => router.push('/chatbot')} className="px-6 py-2.5 rounded-full text-gray-400 hover:text-white transition text-sm font-medium">AI Chatbot</button>
             <AdminNavLink />
           </div>
 
@@ -196,14 +215,14 @@ function ResultsContent() {
       {/* Search Bar */}
       <div className="relative z-10 max-w-2xl mx-auto px-4 pt-8 pb-4">
         <form onSubmit={handleSubmit}>
-          <div className="flex items-center bg-[#151518] border border-gray-700/50 hover:border-yellow-500/50 focus-within:border-yellow-500/50 rounded-full px-6 py-3.5 shadow-[0_0_30px_rgba(0,0,0,0.5)] transition-all duration-300">
-            <Search className="w-5 h-5 mr-4 text-yellow-500/80" />
+          <div className="flex items-center bg-[#151518] border border-gray-700/50 hover:border-yellow-500/50 focus-within:border-yellow-500/50 rounded-full px-6 py-4 shadow-[0_0_30px_rgba(0,0,0,0.5)] transition-all duration-300">
+            <Search className="w-6 h-6 mr-4 text-yellow-500/80" />
             <input
               type="text"
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               placeholder="Αναζήτηση αποφάσεων, δικαστήρια, θέματα..."
-              className="flex-1 bg-transparent border-none outline-none text-lg text-white placeholder-gray-500"
+              className="flex-1 bg-transparent border-none outline-none text-xl text-white placeholder-gray-500"
             />
             {inputValue && (
               <button type="button" onClick={() => { setInputValue(''); setQuery(''); }} className="p-1 hover:bg-[#333] rounded-full">
@@ -236,22 +255,22 @@ function ResultsContent() {
         {/* Active filter pills */}
         {hasActiveFilters && (
           <div className="flex flex-wrap gap-2 mb-4">
-            {filterDikastirio.map(d => (
-              <span key={d} className="inline-flex items-center gap-1.5 px-3 py-1 bg-yellow-500/15 text-yellow-400 rounded-full text-xs border border-yellow-500/30">
-                <Landmark className="w-3 h-3" /> {d}
-                <button onClick={() => setFilterDikastirio(prev => prev.filter(v => v !== d))}><X className="w-3 h-3" /></button>
+            {filterYpokatigoria.map(y => (
+              <span key={y} className="inline-flex items-center gap-1.5 px-3 py-1 bg-yellow-500/15 text-yellow-400 rounded-full text-xs border border-yellow-500/30">
+                <Landmark className="w-3 h-3" /> {truncateAtDots(y)}
+                <button onClick={() => setFilterYpokatigoria(prev => prev.filter(v => v !== y))}><X className="w-3 h-3" /></button>
               </span>
             ))}
             {filterKatigoria.map(k => (
               <span key={k} className="inline-flex items-center gap-1.5 px-3 py-1 bg-yellow-500/15 text-yellow-400 rounded-full text-xs border border-yellow-500/30">
-                <TagIcon className="w-3 h-3" /> {k}
+                <TagIcon className="w-3 h-3" /> {truncateAtDots(k)}
                 <button onClick={() => setFilterKatigoria(prev => prev.filter(v => v !== k))}><X className="w-3 h-3" /></button>
               </span>
             ))}
-            {filterEtos.map(e => (
-              <span key={e} className="inline-flex items-center gap-1.5 px-3 py-1 bg-yellow-500/15 text-yellow-400 rounded-full text-xs border border-yellow-500/30">
-                <Calendar className="w-3 h-3" /> {e}
-                <button onClick={() => setFilterEtos(prev => prev.filter(v => v !== e))}><X className="w-3 h-3" /></button>
+            {filterOrganismos.map(o => (
+              <span key={o} className="inline-flex items-center gap-1.5 px-3 py-1 bg-yellow-500/15 text-yellow-400 rounded-full text-xs border border-yellow-500/30">
+                <Building2 className="w-3 h-3" /> {o}
+                <button onClick={() => setFilterOrganismos(prev => prev.filter(v => v !== o))}><X className="w-3 h-3" /></button>
               </span>
             ))}
           </div>
@@ -259,14 +278,31 @@ function ResultsContent() {
 
         <div className="flex gap-6">
           {/* Sidebar - Facets */}
-          <aside className="hidden lg:block w-64 shrink-0" data-theme="dark">
+          <aside className="hidden lg:block w-72 shrink-0" data-theme="dark">
             <div className="sticky top-[90px] space-y-3">
-              <div className="flex items-center gap-2 px-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                <Filter className="w-3.5 h-3.5" /> Φίλτρα
+              <div className="flex items-center gap-2 px-1 text-sm font-bold text-gray-400 uppercase tracking-wider">
+                <Filter className="w-4 h-4" /> Φίλτρα
               </div>
-              {renderFacetSection('Κατηγορία', <TagIcon className="w-4 h-4 text-yellow-500/70" />, facets.katigoria, filterKatigoria, (v) => { setPage(0); setFilterKatigoria(v) })}
-              {renderFacetSection('Δικαστήριο', <Landmark className="w-4 h-4 text-yellow-500/70" />, facets.dikastirio, filterDikastirio, (v) => { setPage(0); setFilterDikastirio(v) })}
-              {renderFacetSection('Έτος', <Calendar className="w-4 h-4 text-yellow-500/70" />, facets.etos, filterEtos, (v) => { setPage(0); setFilterEtos(v) })}
+              <FacetSection
+                title="Κατηγορία"
+                icon={<TagIcon className="w-4 h-4 text-yellow-500/70" />}
+                items={katigoriaItems}
+                selectedValues={filterKatigoria}
+                onToggle={(v) => toggleFilter('katigoria', v)}
+                displayTransform={truncateAtDots}
+              />
+              <SubcategorySection
+                groups={subGroups}
+                selectedValues={filterYpokatigoria}
+                onToggle={(v) => toggleFilter('ypokatigoria', v)}
+              />
+              <FacetSection
+                title="Οργανισμός"
+                icon={<Building2 className="w-4 h-4 text-yellow-500/70" />}
+                items={organismosItems}
+                selectedValues={filterOrganismos}
+                onToggle={(v) => toggleFilter('organismos', v)}
+              />
             </div>
           </aside>
 
@@ -284,28 +320,39 @@ function ResultsContent() {
               </div>
             ) : (
               <div className="space-y-3">
-                {results.map((item) => (
+                {results.map((item) => {
+                  const fileColor = getFileTypeStyle(item.pdf_path).color;
+                  return (
                   <Card
                     key={item.id}
-                    className="cursor-pointer group hover:bg-surface-hover transition-colors"
+                    className="cursor-pointer group hover:bg-surface-hover transition-colors border border-transparent hover:[border-color:var(--file-color)]"
+                    style={{ ['--file-color' as string]: fileColor } as React.CSSProperties}
                     onClick={() => handleResultClick(item)}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="p-1.5 bg-yellow-500/10 rounded-lg shrink-0">
-                          <FileText className="w-4 h-4 text-yellow-500" />
-                        </div>
+                        <FileTypeIcon fileName={item.pdf_path} className="w-4 h-4" />
                         <div>
-                          <span className="text-base font-bold text-foreground group-hover:text-yellow-400 transition-colors">
-                            {item.arithmos}
+                          <span className="text-base font-bold text-foreground transition-colors">
+                            {stripFileExtension(item.arithmos)}
                           </span>
-                          <p className="text-xs text-muted mt-0.5">{item.dikastirio} • {item.etos}</p>
+                          {item.organismos && item.organismos.length > 0 && (
+                            <p className="text-xs text-muted mt-0.5">{item.organismos.join(', ')}</p>
+                          )}
                         </div>
                       </div>
                       {item.katigoria?.length > 0 && (
                         <div className="flex flex-wrap gap-1 shrink-0">
                           {item.katigoria.map(cat => (
-                            <span key={cat} className={`text-xs px-2 py-0.5 rounded-full font-medium border ${categoryChipClass(cat)}`}>{cat}</span>
+                            <span
+                              key={cat}
+                              className="text-xs px-2 py-0.5 rounded-full font-medium border"
+                              style={{
+                                backgroundColor: 'oklch(20.5% 0 0)',
+                                borderColor: 'oklch(26.9% 0 0)',
+                                color: 'oklch(70.8% 0 0)',
+                              }}
+                            >{cat}</span>
                           ))}
                         </div>
                       )}
@@ -320,7 +367,8 @@ function ResultsContent() {
                       )}
                     </Card.Header>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             )}
 

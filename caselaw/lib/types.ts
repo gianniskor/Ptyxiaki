@@ -1,12 +1,14 @@
 export interface SearchResult {
   id: string;
   arithmos: string;
-  dikastirio: string;
-  etos: number;
   titlos: string;
   katigoria: string[];
+  ypokatigoria?: string[];
+  organismos?: string[];
   snippet?: string;
   pdf_path: string;
+  dikastirio?: string;
+  etos?: number;
 }
 
 export interface FacetItem {
@@ -15,7 +17,7 @@ export interface FacetItem {
 }
 
 export interface Facets {
-  dikastirio: FacetItem[];
-  etos: FacetItem[];
   katigoria: FacetItem[];
+  ypokatigoria: FacetItem[];
+  organismos: FacetItem[];
 }

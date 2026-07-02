@@ -2,8 +2,8 @@
 
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Eye, EyeOff, Building2 } from 'lucide-react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
 
@@ -16,8 +16,25 @@ export default function RegisterPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Invite / referral token (?token=…) — determines the user's organisation.
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState<string | null>(null);
+  const [orgChecking, setOrgChecking] = useState(false);
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get('token');
+    if (!token) return;
+    setInviteToken(token);
+    if (!supabase) return;
+    setOrgChecking(true);
+    supabase
+      .rpc('get_invite_org', { p_token: token })
+      .then(({ data }) => setOrgName((data as string | null) ?? null))
+      .then(() => setOrgChecking(false));
+  }, [supabase]);
+
   const notConfigured = () => {
-    setError('Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to .env.local to enable auth.');
+    setError('Add environment variables to enable auth.');
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -33,16 +50,32 @@ export default function RegisterPage() {
       password,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
+        data: inviteToken ? { invite_token: inviteToken } : undefined,
       },
     });
     setLoading(false);
 
-    if (signUpError) { setError(signUpError.message); return; }
+    if (signUpError) {
+      const msg = signUpError.message.toLowerCase();
+      if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
+        setError('Υπάρχει ήδη λογαριασμός με αυτό το email. Δοκιμάστε να συνδεθείτε.');
+      } else {
+        setError(signUpError.message);
+      }
+      return;
+    }
+
+    // Supabase obfuscates "email already registered" by returning a fake user
+    // with an empty `identities` array (and no session) instead of an error.
+    if (data.user && (data.user.identities?.length ?? 0) === 0) {
+      setError('Υπάρχει ήδη λογαριασμός με αυτό το email. Δοκιμάστε να συνδεθείτε.');
+      return;
+    }
 
     if (!data.session) {
-      setMessage('Account created — check your email to confirm, then sign in.');
+      setMessage('Ο λογαριασμός δημιουργήθηκε, ελέγξτε το email σας για να τον επιβεβαιώσετε. Κοιταξτε και τον φάκελο ανεπιθύμητης αλληλογραφίας (spam).');
     } else {
-      setMessage('Account created. You are signed in.');
+      setMessage('Ο λογαριασμός δημιουργήθηκε. Έχετε συνδεθεί.');
     }
   };
 
@@ -51,9 +84,11 @@ export default function RegisterPage() {
     if (!supabase) { notConfigured(); return; }
 
     setLoading(true);
+    const next = `/onboarding`;
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}${inviteToken ? `&invite=${encodeURIComponent(inviteToken)}` : ''}`;
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback?next=/onboarding` },
+      options: { redirectTo },
     });
     setLoading(false);
 
@@ -71,12 +106,27 @@ export default function RegisterPage() {
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-black tracking-tight"
             style={{ background: 'linear-gradient(to right, #a78bfa, #fcd34d)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            Create account
+            Δημιουργία λογαριασμού
           </h1>
 
         </div>
 
         <div className="bg-[#151518] border border-gray-800 rounded-2xl p-8 shadow-2xl">
+
+          {inviteToken && (
+            <div className="mb-5">
+              <label className="text-xs text-gray-400 mb-1 block">Οργάνισμός</label>
+              <div className="w-full px-4 py-3 rounded-full bg-[#0f0f11] border border-gray-800 text-sm text-gray-300 flex items-center gap-2">
+                <Building2 size={16} className="text-yellow-400 shrink-0" />
+                <span className="truncate">
+                  {orgChecking ? 'Έλεγχος πρόσκλησης…' : (orgName ?? 'Μη έγκυρος ή ληγμένος σύνδεσμος πρόσκλησης')}
+                </span>
+              </div>
+              {!orgChecking && !orgName && (
+                <p className="text-xs text-red-400 mt-1">Ο σύνδεσμος πρόσκλησης δεν είναι έγκυρος. Επικοινωνήστε με τον διαχειριστή της οργάνωσής σας.</p>
+              )}
+            </div>
+          )}
 
           <div className="mb-5 flex justify-center">
             <button
@@ -85,7 +135,7 @@ export default function RegisterPage() {
               disabled={loading}
               className="cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <img src="/dark/web_dark_rd_SU.svg" alt="Sign up with Google" className="h-11" />
+              <img src="/dark/web_dark_rd_SU.svg" alt="Εγγραφή με Google" className="h-11" />
             </button>
           </div>
 
@@ -94,7 +144,7 @@ export default function RegisterPage() {
               <div className="w-full border-t border-gray-800" />
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="bg-[#151518] px-2 text-gray-500">or use email</span>
+              <span className="bg-[#151518] px-2 text-gray-500">ή χρησιμοποιήστε email</span>
             </div>
           </div>
 
@@ -122,7 +172,7 @@ export default function RegisterPage() {
                 onClick={() => setShowPassword((v) => !v)}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 cursor-pointer"
                 tabIndex={-1}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? 'Απόκρυψη κωδικού' : 'Εμφάνιση κωδικού'}
               >
                 {showPassword ? <Eye size={16} /> : <EyeOff size={16} />}
               </button>
@@ -134,14 +184,14 @@ export default function RegisterPage() {
               disabled={loading}
               className="w-full px-4 py-3 rounded-full bg-white text-black font-medium text-sm hover:bg-gray-200 transition disabled:opacity-50"
             >
-              {loading ? 'Creating account…' : 'Create account'}
+              {loading ? 'Δημιουργία λογαριασμού…' : 'Δημιουργία λογαριασμού'}
             </button>
           </form>
 
           <p className="text-sm text-gray-500 mt-6 text-center">
-            Already have an account?{' '}
+            Έχετε ήδη λογαριασμό;{' '}
             <Link href="/auth/login" className="text-yellow-400 hover:text-yellow-300">
-              Sign in
+              Σύνδεση
             </Link>
           </p>
         </div>
@@ -151,7 +201,7 @@ export default function RegisterPage() {
             href="/"
             className="px-5 py-2 rounded-full bg-white/5 border border-white/10 text-gray-400 text-xs hover:bg-white/10 hover:text-gray-300 transition"
           >
-            Back to Home Page
+            Επιστροφή στην Αρχική Σελίδα
           </Link>
         </div>
       </div>

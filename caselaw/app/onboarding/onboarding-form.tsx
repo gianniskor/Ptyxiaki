@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
-import { Camera, Loader2 } from 'lucide-react'
+import { Camera, Loader2, Building2 } from 'lucide-react'
 
 type Claims = { sub: string; email?: string; [key: string]: unknown }
 
@@ -16,9 +16,11 @@ interface InitialData {
 export default function OnboardingForm({
   claims,
   initialData = {},
+  organisationName = null,
 }: {
   claims: Claims
   initialData?: InitialData
+  organisationName?: string | null
 }) {
   const supabase = createSupabaseBrowserClient()
   const router = useRouter()
@@ -103,9 +105,9 @@ export default function OnboardingForm({
       {/* Heading */}
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-black tracking-tight text-white">
-          Your profile
+          Το προφίλ σας
         </h1>
-        <p className="text-white/60 mt-2 text-sm">You can update this any time from your account.</p>
+        <p className="text-white/60 mt-2 text-sm">Μπορείτε να το ενημερώσετε οποιαδήποτε στιγμή από τον λογαριασμό σας.</p>
       </div>
 
       <div className="bg-[#151518]/80 backdrop-blur-xl border border-gray-800 rounded-2xl p-8 shadow-2xl">
@@ -139,7 +141,7 @@ export default function OnboardingForm({
             className="hidden"
             onChange={handleFileChange}
           />
-          <p className="text-xs text-gray-500 mt-2">Click to add a photo (optional)</p>
+          <p className="text-xs text-gray-500 mt-2">Κάντε κλικ για να προσθέσετε μια φωτογραφία (προαιρετικό)</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -147,7 +149,7 @@ export default function OnboardingForm({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-400 mb-1 block" htmlFor="firstName">
-                First name
+                Όνομα
               </label>
               <input
                 id="firstName"
@@ -160,7 +162,7 @@ export default function OnboardingForm({
             </div>
             <div>
               <label className="text-xs text-gray-400 mb-1 block" htmlFor="lastName">
-                Last name
+                Επώνυμο
               </label>
               <input
                 id="lastName"
@@ -176,8 +178,8 @@ export default function OnboardingForm({
           {/* Phone */}
           <div>
             <label className="text-xs text-gray-400 mb-1 block" htmlFor="phone">
-              Phone number
-              <span className="text-gray-600 ml-1">(optional)</span>
+              Αριθμός τηλεφώνου
+              <span className="text-gray-600 ml-1">(προαιρετικό)</span>
             </label>
             <input
               id="phone"
@@ -189,6 +191,17 @@ export default function OnboardingForm({
             />
 
           </div>
+
+          {organisationName && (
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Οργάνισμός</label>
+              <div className="w-full px-4 py-3 rounded-xl bg-[#0f0f11] border border-gray-800 text-sm text-gray-400 flex items-center gap-2">
+                <Building2 size={16} className="text-yellow-400 shrink-0" />
+                <span className="truncate">{organisationName}</span>
+              </div>
+              <p className="text-[11px] text-gray-600 mt-1">Ορίζεται από τον διαχειριστή της οργάνωσής σας και δεν μπορεί να αλλάξει.</p>
+            </div>
+          )}
 
           {error && (
             <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
@@ -202,7 +215,7 @@ export default function OnboardingForm({
             className="w-full px-4 py-3 rounded-full bg-white text-black font-medium text-sm hover:bg-gray-100 transition disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            {saving ? 'Saving…' : 'Complete setup'}
+            {saving ? 'Αποθήκευση…' : 'Ολοκλήρωση ρύθμισης προφίλ'}
           </button>
         </form>
 

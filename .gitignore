@@ -12,7 +12,6 @@ build/
 # ── Environment (secrets) ──
 .env
 .env.local
-.env.*.local
 
 # ── Solr data (binary, regenerate από indexer) ──
 solr/solr_data/data/index/
@@ -22,6 +21,10 @@ solr/solr_data/logs/
 
 # ── PDFs (πολύ μεγάλα για git) ──
 pdf/
+temporary/
+
+# Dataset
+Dataset/
 
 # ── Node / Next.js ──
 node_modules/

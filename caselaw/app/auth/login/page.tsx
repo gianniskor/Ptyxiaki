@@ -1,9 +1,5 @@
 "use client";
 
-// TODO: create the reset password page at /auth/reset-password (triggered by the "Forgot password?" link below)
-// TODO: check again what was the Supabase  email about
-
-
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -32,7 +28,7 @@ export default function LoginPage() {
     setError(null);
 
     if (!supabase) {
-      setError('Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local to enable auth.');
+      setError('Internal configuration error. Please contact support.');
       return;
     }
 
@@ -52,7 +48,7 @@ export default function LoginPage() {
     setError(null);
 
     if (!supabase) {
-      setError('Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local to enable auth.');
+      setError('Add environment variables to enable auth.');
       return;
     }
 
@@ -78,7 +74,7 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-black tracking-tight"
             style={{ background: 'linear-gradient(to right, #a78bfa, #fcd34d)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            Sign in
+            Σύνδεση
           </h1>
 
         </div>
@@ -101,7 +97,7 @@ export default function LoginPage() {
               <div className="w-full border-t border-gray-800" />
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="bg-[#151518] px-2 text-gray-500">or use email</span>
+              <span className="bg-[#151518] px-2 text-gray-500">ή χρησιμοποιήστε email</span>
             </div>
           </div>
 
@@ -135,7 +131,7 @@ export default function LoginPage() {
             </div>
             <div className="flex justify-end -mt-1">
               <Link href="/auth/forgot-password" className="text-xs text-gray-500 hover:text-yellow-400 transition">
-                Forgot password?
+                Ξεχάσατε τον κωδικό σας;
               </Link>
             </div>
             {error && <p className="text-sm text-red-400">{error}</p>}
@@ -144,14 +140,14 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full px-4 py-3 rounded-full bg-white text-black font-medium text-sm hover:bg-gray-200 transition disabled:opacity-50"
             >
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? 'Σύνδεση…' : 'Σύνδεση'}
             </button>
           </form>
 
           <p className="text-sm text-gray-500 mt-6 text-center">
-            No account?{' '}
+            Δεν έχετε λογαριασμό;{' '}
             <Link href="/auth/register" className="text-yellow-400 hover:text-yellow-300">
-              Register
+              Εγγραφή
             </Link>
           </p>
         </div>
@@ -161,7 +157,7 @@ export default function LoginPage() {
             href="/"
             className="px-5 py-2 rounded-full bg-white/5 border border-white/10 text-gray-400 text-xs hover:bg-white/10 hover:text-gray-300 transition"
           >
-            Back to Home Page
+            Επιστροφή στην Αρχική Σελίδα
           </Link>
         </div>
       </div>
