@@ -80,13 +80,13 @@ export function UserDropdown({ email, displayName, avatarUrl, isAdmin, isOrgAdmi
           <DropdownMenuItem asChild className="rounded-lg cursor-pointer px-3 py-2 focus:bg-white/5 text-gray-300 hover:text-gray-100">
             <Link href="/account" className="flex items-center gap-2.5">
               <Icon icon="solar:user-circle-line-duotone" className="size-4 text-gray-500 shrink-0" />
-              <span className="text-sm">My Account</span>
+              <span className="text-sm">Ο λογαριασμός μου</span>
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild className="rounded-lg cursor-pointer px-3 py-2 focus:bg-white/5 text-gray-300 hover:text-gray-100">
             <Link href="/settings" className="flex items-center gap-2.5">
               <Icon icon="solar:settings-line-duotone" className="size-4 text-gray-500 shrink-0" />
-              <span className="text-sm">Settings</span>
+              <span className="text-sm">Ρυθμίσεις</span>
             </Link>
           </DropdownMenuItem>
           {isAdmin && (
@@ -116,7 +116,7 @@ export function UserDropdown({ email, displayName, avatarUrl, isAdmin, isOrgAdmi
           >
             <span className="flex items-center gap-2.5">
               <Icon icon="solar:logout-2-bold-duotone" className="size-4 shrink-0" />
-              <span className="text-sm">Sign out</span>
+              <span className="text-sm">Αποσύνδεση</span>
             </span>
           </DropdownMenuItem>
         </DropdownMenuGroup>

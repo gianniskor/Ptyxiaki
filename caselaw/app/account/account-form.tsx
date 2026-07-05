@@ -165,6 +165,7 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
               </p>
               <p className="text-sm text-gray-500 mt-0.5">{claims?.email ?? ''}</p>
             </div>
+            {/*
             <div className="w-full pt-2 border-t border-gray-800 text-left space-y-1">
               <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Στατιστικά</p>
               <div className="flex justify-between text-sm">
@@ -176,6 +177,7 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
                 <span className="text-gray-300 font-medium">5</span>
               </div>
             </div>
+            */}
           </div>
 
           {/* Right: Edit form */}
@@ -250,14 +252,14 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
                 className="px-6 py-2.5 rounded-full bg-white text-black font-medium text-sm hover:bg-gray-100 transition disabled:opacity-50 flex items-center gap-2"
               >
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {saving ? 'Saving…' : 'Save changes'}
+                {saving ? 'Αποθήκευση…' : 'Αποθήκευση αλλαγών'}
               </button>
             </div>
           </div>
         </div>
 
         {/* Bookmarked PDFs */}
-        <div>
+        {/* <div>
           <div className="flex items-center gap-2 mb-4">
             <BookOpen className="w-4 h-4 text-yellow-500/70" />
             <h2 className="text-base font-semibold text-white">Αγαπημένες υποθέσεις</h2>
@@ -279,9 +281,10 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
             ))}
           </div>
         </div>
-
+        */}
         {/* Recent AI conversations */}
-        <div>
+        
+        {/* <div>
           <div className="flex items-center gap-2 mb-4">
             <MessageSquare className="w-4 h-4 text-yellow-500/70" />
             <h2 className="text-base font-semibold text-white">Πρόσφατες συνομιλίες με Chatbot</h2>
@@ -301,7 +304,8 @@ export default function AccountForm({ claims }: { claims: Claims | null }) {
               </div>
             ))}
           </div>
-        </div>
+        </div> 
+          */}
 
       </div>
       </div>

@@ -6,7 +6,7 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 /**
  * Polls the current user's approval status while they sit on the
  * pending-approval screen. As soon as an admin approves them, the user is
- * sent into the app automatically — no manual refresh required.
+ * sent into the app automatically, no manual refresh required.
  */
 export default function PendingApprovalWatcher({ userId }: { userId: string }) {
   const done = useRef(false)

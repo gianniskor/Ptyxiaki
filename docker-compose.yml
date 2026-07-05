@@ -1,3 +1,4 @@
+
 services:
 
   solr:
@@ -29,8 +30,11 @@ services:
       - ./pdf:/app/pdf
       - ./Dataset:/app/Dataset:ro
     command: uvicorn clapi:app --host 0.0.0.0 --port 8000 --reload
-    env_file:
-      - ./backend/.env
+    environment:
+      - SOLR_URL=http://solr:8983/solr/nomologia
+      - DATASET_DIR=/app/Dataset
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:1234/v1}
+      - LM_STUDIO_MODEL=${LM_STUDIO_MODEL:-google/gemma-4-12b-qat}
     depends_on:
       solr:
         condition: service_healthy
@@ -41,12 +45,25 @@ services:
     build:
       context: ./caselaw
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* values are baked into the client bundle at build time.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
     container_name: caselaw_frontend
     ports:
       - "3000:3000"
-    env_file:
-      - ./caselaw/.env.local
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # Server-side only secrets/config (available at runtime).
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+      # SUPABASE_SERVICE_ROLE_KEY διαβάζεται από /run/secrets/supabase_service_role_key
+    secrets:
+      - supabase_service_role_key
     depends_on:
       - backend
+
+secrets:
+  supabase_service_role_key:
+    file: ./secrets/supabase_service_role_key.txt

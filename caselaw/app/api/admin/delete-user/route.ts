@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { readFileSync } from 'node:fs'
+
+function getServiceRoleKey(): string | undefined {
+  try {
+    return readFileSync('/run/secrets/supabase_service_role_key', 'utf8').trim()
+  } catch (err) {
+    console.error('[delete-user] Could not read Docker secret, falling back to env var:', err)
+    return process.env.SUPABASE_SERVICE_ROLE_KEY
+  }
+}
 
 /**
  * Permanently deletes a user account (auth user + profile).
@@ -39,9 +49,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'You cannot delete your own account.' }, { status: 400 })
   }
 
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const serviceKey = getServiceRoleKey()
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   if (!serviceKey || !url) {
+    console.error('[delete-user] Missing config — serviceKey present:', !!serviceKey, '| url present:', !!url)
     return NextResponse.json(
       { error: 'Server is missing a required environment variable.' },
       { status: 500 },
@@ -61,6 +72,7 @@ export async function POST(request: Request) {
 
   const { error } = await admin.auth.admin.deleteUser(userId)
   if (error) {
+    console.error('[delete-user] Supabase deleteUser error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 

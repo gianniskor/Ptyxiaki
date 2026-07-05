@@ -12,7 +12,6 @@ from pathlib import Path
 from pydantic import BaseModel
 
 app = FastAPI(title="CaseLaw API")
-# app.mount("/pdf", StaticFiles(directory="pdf"), name="pdf")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,8 +22,6 @@ app.add_middleware(
 
 SOLR_URL     = os.environ["SOLR_URL"]
 
-# OLLAMA_URL   = os.environ.get("OLLAMA_URL",   "http://localhost:11434")
-# OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
 
 LM_STUDIO_URL   = os.environ["LM_STUDIO_URL"]
 LM_STUDIO_MODEL = os.environ["LM_STUDIO_MODEL"]
@@ -369,11 +366,17 @@ async def rag_endpoint(body: RagQuery):
 # FACT-CHECK  (streaming, multi-step RAG)
 # ──────────────────────────────────────────────────────────────────────────────
 
+class HistoryMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
 class FactCheckQuery(BaseModel):
     text: str
     top_k: int = 5
     katigoria: list[str] = []
     ypokatigoria: list[str] = []
+    history: list[HistoryMessage] = []
 
 
 @app.post("/api/fact-check")
@@ -507,19 +510,28 @@ async def fact_check_endpoint(body: FactCheckQuery):
             "Παράθεσε παραπομπές π.χ. [1], [2]. "
             "Αν οι πηγές έχουν μερική πληροφορία, χρησιμοποίησέ την — μην αρνείσαι να απαντήσεις. "
             "Απάντησε απευθείας, χωρίς να αναλύεις τη σκέψη σου ή να γράφεις ενδιαφέροντα βήματα ανάλυσης."
-)
+        )
         user_msg = (
             f"ΕΡΩΤΗΣΗ: {body.text}\n\n"
             f"ΠΗΓΕΣ:\n{context}\n\n"
             "Απάντησε βάσει των πηγών:"
         )
 
-        # Collect sources footer — μορφή ανά γραμμή: "[i] τίτλος|@|snippet|@|pdf_path|@|keywords"
+        # Collect sources footer, μορφή ανά γραμμή: "[i] τίτλος|@|snippet|@|pdf_path|@|keywords"
         kw_clean = re.sub(r"\s+", " ", keywords.replace("|", " ")).strip()
         sources_footer = "\n\n**Πηγές:**\n" + "\n".join(
             f"[{i}] {m['title']}|@|{m['snippet']}|@|{m['pdf_path']}|@|{kw_clean}"
             for i, m in enumerate(source_meta, 1)
         )
+
+        # Build messages list with conversation history (last 6 turns max)
+        MAX_HISTORY_TURNS = 6
+        history_slice = body.history[-(MAX_HISTORY_TURNS * 2):]
+        llm_messages = [{"role": "system", "content": system_msg}]
+        for h in history_slice:
+            if h.role in ("user", "assistant"):
+                llm_messages.append({"role": h.role, "content": h.content})
+        llm_messages.append({"role": "user", "content": user_msg})
 
         async def stream_ollama() -> AsyncIterator[str]:
             async with httpx.AsyncClient(timeout=180) as stream_client:
@@ -533,10 +545,7 @@ async def fact_check_endpoint(body: FactCheckQuery):
                         "top_p": 0.5,
                         "max_tokens": 8000,
                         "enable_thinking": True,
-                        "messages": [
-                            {"role": "system", "content": system_msg},
-                            {"role": "user",   "content": user_msg},
-                        ],
+                        "messages": llm_messages,
                     },
                 ) as resp:
                     import json as _json
@@ -555,7 +564,6 @@ async def fact_check_endpoint(body: FactCheckQuery):
                                 reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
                                 token = delta.get("content") or ""
 
-                                # Reasoning tokens — τύλιξέ τα σε <think>...</think>
                                 if reasoning:
                                     if not in_think:
                                         yield "<think>"
@@ -570,7 +578,6 @@ async def fact_check_endpoint(body: FactCheckQuery):
                             except (ValueError, IndexError, KeyError):
                                 continue
 
-                    # Κλείσε το think αν για κάποιο λόγο δεν ήρθε content μετά το reasoning
                     if in_think and not think_closed:
                         yield "</think>"
                                 

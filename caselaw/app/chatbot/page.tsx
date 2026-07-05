@@ -12,6 +12,7 @@ import { Loader } from "@/components/ui/animated-loading-svg-text-shimmer";
 import { PdfViewer } from "@/components/PdfViewer";
 import { getFileTypeStyle } from "@/components/FileTypeIcon";
 import { buildPdfUrl } from "@/lib/api";
+import { API_BASE_URL } from "@/lib/constants";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 interface RagSource {
@@ -350,6 +351,11 @@ const handleSubmit = async (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
 
+    // Capture history before adding the new turn (only completed messages with content)
+    const history = messages
+      .filter((m) => m.content.trim() !== "")
+      .map((m) => ({ role: m.role, content: m.content }));
+
     setMessages((prev) => [
       ...prev,
       { role: "user", content: trimmed },
@@ -359,10 +365,10 @@ const handleSubmit = async (value: string) => {
     setRequesting(true);
 
     try {
-      const response = await fetch("http://localhost:8000/api/fact-check", {
+      const response = await fetch(`${API_BASE_URL}/api/fact-check`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed, top_k: 5, katigoria: [], ypokatigoria: [] }),
+        body: JSON.stringify({ text: trimmed, top_k: 5, katigoria: [], ypokatigoria: [], history }),
       });
 
       if (!response.ok) throw new Error(`${response.status}`);

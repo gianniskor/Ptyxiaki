@@ -5,7 +5,7 @@ Usage:
     python bulk_indexer.py --dataset /path/to/dataset
     python bulk_indexer.py --dataset /path/to/dataset --solr http://localhost:8983/solr/nomologia --batch 20
 """
-
+# 
 import argparse
 import os
 import re
@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 
 import fitz          # pip install pymupdf
-import httpx         # pip install httpx
+import httpx         
 
 try:
     import docx as python_docx
@@ -38,7 +38,6 @@ def truncate_at_dots(name: str) -> str:
     """Strip padding dots and everything after: '1.12 ΝΟΜΟΘΕΣΙΑ ... 2022' -> '1.12 ΝΟΜΟΘΕΣΙΑ'"""
     return DOTS_SUFFIX.sub("", name).strip()
 
-# TODO: revise the organisation names
 KNOWN_ORGS = [
     "ΤΕΕ", "ΕΛΟΤ", "ΥΠΕΝ", "ΔΕΗ", "ΕΦΚΑ", "ΙΚΑ", "ΟΣΕ",
     "ΑΔΜΗΕ", "ΔΕΔΔΗΕ", "ISO", "ΚΕΠΕΑ", "ΕΦΕΤ", "ΤΕΙ", "ΕΜΠ",

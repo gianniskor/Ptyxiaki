@@ -13,6 +13,7 @@ import { AdminNavLink } from '@/components/AdminNavLink';
 import { FileTypeIcon, getFileTypeStyle, stripFileExtension } from '@/components/FileTypeIcon';
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation';
 import { buildPdfUrl, parseFacets, truncateAtDots, fetchHierarchy, fetchGlobalFacets, mergeFacetCounts } from '@/lib/api';
+import { API_BASE_URL } from '@/lib/constants';
 import { FacetSection, SubcategorySection } from '@/components/Facets';
 import type { SearchResult, Facets } from '@/lib/types';
 
@@ -52,7 +53,7 @@ function ResultsContent() {
       filterOrganismos.forEach(o => params.append('organismos', o));
       filterKatigoria.forEach(k => params.append('katigoria', k));
 
-      const res = await fetch(`http://localhost:8000/api/search?${params}`);
+      const res = await fetch(`${API_BASE_URL}/api/search?${params}`);
       const data = await res.json();
 
       // Merge highlights into results

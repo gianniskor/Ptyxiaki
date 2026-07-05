@@ -13,6 +13,9 @@ build/
 .env
 .env.local
 
+# ── Docker secrets (ποτέ στο git) ──
+secrets/
+
 # ── Solr data (binary, regenerate από indexer) ──
 solr/solr_data/data/index/
 solr/solr_data/data/tlog/

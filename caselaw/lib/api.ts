@@ -1,4 +1,5 @@
 import type { FacetItem, Facets } from './types';
+import { API_BASE_URL } from './constants';
 
 function sortByNumPrefix(a: FacetItem, b: FacetItem): number {
   const parse = (s: string) => {
@@ -29,7 +30,7 @@ export function parseFacets(raw: Record<string, any[]>): Facets {
 
 export function buildPdfUrl(pdfPath: string, _katigoria: string[], query: string): string {
   const encoded = pdfPath.split('/').map(encodeURIComponent).join('/');
-  const base = `http://localhost:8000/pdf/${encoded}`;
+  const base = `${API_BASE_URL}/pdf/${encoded}`;
   // Append the PDF Open Parameter `#search=` so the browser's native PDF viewer
   // jumps to and highlights the first occurrence of the search term automatically.
   const term = (query || '').trim();
@@ -44,7 +45,7 @@ export const truncateAtDots = (name: string): string =>
 
 export async function fetchHierarchy(): Promise<Record<string, string[]>> {
   try {
-    const res = await fetch('http://localhost:8000/api/hierarchy');
+    const res = await fetch(`${API_BASE_URL}/api/hierarchy`);
     return res.ok ? res.json() : {};
   } catch {
     return {};
@@ -58,7 +59,7 @@ export async function fetchHierarchy(): Promise<Record<string, string[]>> {
 export async function fetchGlobalFacets(): Promise<Facets> {
   const empty: Facets = { katigoria: [], ypokatigoria: [], organismos: [] };
   try {
-    const res = await fetch('http://localhost:8000/api/facets');
+    const res = await fetch(`${API_BASE_URL}/api/facets`);
     if (!res.ok) return empty;
     const data = await res.json();
     const toItems = (obj: Record<string, number> = {}): FacetItem[] =>

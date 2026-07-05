@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/client';
 
 export function useKeyboardShortcuts({
   onEscape,
@@ -39,23 +41,101 @@ export function usePdfViewer() {
   return { activePdfUrl, activePdfTitle, openPdf, closePdf };
 }
 
+const RECENT_SEARCHES_MAX = 5;
+const GUEST_RECENT_SEARCHES_KEY = 'recentSearches';
+
 export function useRecentSearches() {
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const searchesRef = useRef<string[]>([]);
+  const supabaseRef = useRef<SupabaseClient | null>(null);
+  const userIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('recentSearches');
-      if (stored) setRecentSearches(JSON.parse(stored));
-    } catch { /* ignore */ }
+  // Keep state and ref in sync so `addRecentSearch` can read the latest value.
+  const apply = useCallback((next: string[]) => {
+    searchesRef.current = next;
+    setRecentSearches(next);
   }, []);
 
-  const addRecentSearch = (term: string) => {
+  useEffect(() => {
+    const supabase = createClient();
+    supabaseRef.current = supabase;
+    let active = true;
+
+    const loadGuest = () => {
+      try {
+        const stored = localStorage.getItem(GUEST_RECENT_SEARCHES_KEY);
+        apply(stored ? JSON.parse(stored) : []);
+      } catch { apply([]); }
+    };
+
+    // Load the correct history for whoever is currently signed in (or guest).
+    const sync = async () => {
+      if (!supabase) { loadGuest(); return; }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!active) return;
+      userIdRef.current = user?.id ?? null;
+
+      if (user) {
+        const { data, error } = await supabase
+          .from('recent_searches')
+          .select('term')
+          .order('created_at', { ascending: false })
+          .limit(RECENT_SEARCHES_MAX);
+        if (!active) return;
+        apply(error ? [] : (data ?? []).map((row) => row.term as string));
+      } else {
+        loadGuest();
+      }
+    };
+
+    sync();
+
+    // Reload when the user logs in/out so the list never leaks across accounts.
+    const sub = supabase?.auth.onAuthStateChange(() => { sync(); });
+    return () => {
+      active = false;
+      sub?.data.subscription.unsubscribe();
+    };
+  }, [apply]);
+
+  const addRecentSearch = useCallback((term: string) => {
     const trimmed = term.trim();
     if (!trimmed) return;
-    const updated = [trimmed, ...recentSearches.filter(s => s !== trimmed)].slice(0, 5);
-    setRecentSearches(updated);
-    try { localStorage.setItem('recentSearches', JSON.stringify(updated)); } catch { /* ignore */ }
-  };
 
-  return { recentSearches, addRecentSearch };
+    const updated = [trimmed, ...searchesRef.current.filter((s) => s !== trimmed)].slice(0, RECENT_SEARCHES_MAX);
+    apply(updated);
+
+    const supabase = supabaseRef.current;
+    const uid = userIdRef.current;
+    if (supabase && uid) {
+      void supabase
+        .from('recent_searches')
+        .upsert(
+          { user_id: uid, term: trimmed, created_at: new Date().toISOString() },
+          { onConflict: 'user_id,term' },
+        )
+        .then(({ error }) => {
+          if (error) console.error('Failed to save recent search:', error);
+        });
+    } else {
+      try { localStorage.setItem(GUEST_RECENT_SEARCHES_KEY, JSON.stringify(updated)); } catch { /* ignore */ }
+    }
+  }, [apply]);
+
+  const clearRecentSearches = useCallback(() => {
+    apply([]);
+
+    const supabase = supabaseRef.current;
+    const uid = userIdRef.current;
+    if (supabase && uid) {
+      void supabase.from('recent_searches').delete().eq('user_id', uid)
+        .then(({ error }) => {
+          if (error) console.error('Failed to clear recent searches:', error);
+        });
+    } else {
+      try { localStorage.removeItem(GUEST_RECENT_SEARCHES_KEY); } catch { /* ignore */ }
+    }
+  }, [apply]);
+
+  return { recentSearches, addRecentSearch, clearRecentSearches };
 }

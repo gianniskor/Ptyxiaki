@@ -8,7 +8,7 @@ import {
   Clock,
   Scale, Filter,
   ArrowRight, Building2, Tag as TagIcon,
-  Loader
+  Loader, Trash2
 } from 'lucide-react';
 import {
   Carousel,
@@ -18,6 +18,7 @@ import {
   CarouselPrevious,
 } from '@/components/ui/carousel';
 import { PdfViewer } from '@/components/PdfViewer';
+import { API_BASE_URL } from '@/lib/constants';
 import { AuthButton } from '@/components/AuthButton';
 import { AdminNavLink } from '@/components/AdminNavLink';
 import { FileTypeIcon, getFileTypeStyle, stripFileExtension } from '@/components/FileTypeIcon';
@@ -46,7 +47,7 @@ export default function App() {
 
   // Shared hooks
   const { activePdfUrl, activePdfTitle, openPdf, closePdf } = usePdfViewer();
-  const { recentSearches, addRecentSearch } = useRecentSearches();
+  const { recentSearches, addRecentSearch, clearRecentSearches } = useRecentSearches();
 
   useKeyboardShortcuts({
     onEscape: () => {
@@ -91,7 +92,7 @@ export default function App() {
       activeFilters.ypokatigoria.forEach(y => params.append('ypokatigoria', y));
       activeFilters.organismos.forEach(o => params.append('organismos', o));
 
-      const res = await fetch(`http://localhost:8000/api/search?${params.toString()}`);
+      const res = await fetch(`${API_BASE_URL}/api/search?${params.toString()}`);
       const data = await res.json();
       setResults(data.results || []);
 
@@ -369,9 +370,18 @@ export default function App() {
                   {/* Recent Searches */}
                   {recentSearches.length > 0 && (
                     <div>
-                      <p className="text-sm text-gray-500 mb-2 px-1 flex items-center gap-1.5">
-                        <Clock className="w-4 h-4" /> Πρόσφατες αναζητήσεις
-                      </p>
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <p className="text-sm text-gray-500 flex items-center gap-1.5">
+                          <Clock className="w-4 h-4" /> Πρόσφατες αναζητήσεις
+                        </p>
+                        <button
+                          type="button"
+                          onClick={clearRecentSearches}
+                          className="text-xs text-gray-500 hover:text-red-400 flex items-center gap-1 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Καθαρισμός Αναζητήσεων
+                        </button>
+                      </div>
                       <div className="flex flex-col gap-0.5">
                         {recentSearches.map((term) => (
                           <div

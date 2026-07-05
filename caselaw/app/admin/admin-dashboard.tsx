@@ -15,8 +15,9 @@ import { AuthButton } from '@/components/AuthButton'
 import { BackgroundGradientAnimation } from '@/components/ui/background-gradient-animation'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import { fetchHierarchy, fetchGlobalFacets } from '@/lib/api'
+import { API_BASE_URL } from '@/lib/constants'
 
-const BACKEND = 'http://localhost:8000'
+const BACKEND = API_BASE_URL
 
 const OTHER = '__other__'
 const UNCATEGORIZED = 'Αταξινόμητο'

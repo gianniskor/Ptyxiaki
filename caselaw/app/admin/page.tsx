@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import AdminDashboard from './admin-dashboard'
+import { API_BASE_URL } from '@/lib/constants'
 
-const BACKEND = 'http://localhost:8000'
+const BACKEND = API_BASE_URL
 
 export default async function AdminPage() {
   const supabase = await createClient()
