@@ -29,6 +29,10 @@ temporary/
 # Dataset
 Dataset/
 
+# ── Database: κρατάμε μόνο το ενιαίο schema.sql ──
+Database/*.sql
+!Database/schema.sql
+
 # ── Node / Next.js ──
 node_modules/
 caselaw/.next/
