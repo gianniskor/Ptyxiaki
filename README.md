@@ -1,4 +1,4 @@
-﻿# CaseLaw — Legal & Technical Document Search Platform
+﻿# CaseLaw : Legal & Technical Document Search Platform
 
 CaseLaw is a full-stack search platform for Greek legal and technical documents.
 It combines a fast full-text search engine (Apache Solr), a Python API for
